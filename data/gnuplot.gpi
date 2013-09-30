@@ -1,0 +1,45 @@
+
+set terminal postscript eps color enhanced dashed 
+set output 'start_time.eps'
+set size 1.0,1.0
+
+set xtics nomirror rotate by -45
+
+#set yrange[0:]
+#set style line 1 linetype  1 linewidth 2
+#set style line 2 linetype  2 linewidth 2
+#set style line 3 linetype  3 linewidth 2
+#set style line 4 linetype  5 linewidth 2
+
+set style data hist
+set style histogram rowstacked
+
+set xlabel "time"
+set ylabel "number of requests"
+set xdata time
+set timefmt "%s"
+#set xtics 3600
+
+bw = 3600
+bin(x,width)=width*floor(x/width) + bw/2.0 
+
+set format x "%d/%m/%y %H"
+set boxwidth 10
+#plot 'trace2.dat' using 3:6 w linespoints
+#plot 'trace2.dat' using 3:6 w linespoints
+
+plot 'trace.dat' using (bin($3,bw)):(1.0) smooth freq with boxes title "SGE batch system"
+#plot 'trace3.dat' using (bin($3,bw)):(1.0) smooth freq with boxes 
+
+#set ydata time
+set xdata
+set format x
+set xlabel "job number"
+set ylabel "waiting time (s)"
+
+
+set logscale y
+
+#set xrange[8000000:]
+
+plot 'trace.dat' using 1:($4-$3) w impulses title "SGE batch system"
