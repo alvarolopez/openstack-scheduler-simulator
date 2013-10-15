@@ -1,3 +1,4 @@
+import math
 import uuid
 
 import simpy
@@ -7,34 +8,43 @@ import simpy
 
 class Request(object):
     """A request"""
-    def __init__(self, env, req):
+    def __init__(self, env, req, instance_type):
         self.req = req
         self.env = env
+        self.instance_type = INSTANCE_TYPES[instance_type]
         self.name = "r-%(id)s" % req
         self.jobs = []
 
     def do(self):
         print self.req["submit"], self.env.now
         yield self.env.timeout(self.req["submit"] - self.env.now)
-        print("%2.1f %s > request starts %s tasks" % (env.now, self.name, self.req["nodes"]))
+        print("%2.1f %s > request starts w/ %s tasks" % (env.now, self.name, self.req["tasks"]))
         yield self.env.timeout(1)
         # TODO: 1.- request nodes, spawn instances, run jobs
         # Run the job
 
         # Create all the jobs that will be consumed by the instances
-        job_store = simpy.Store(env, capacity=self.req["nodes"])
-        for i in xrange(self.req["nodes"]):
+        # FIXME(aloga): the job store is per-instance, we should make it global
+        job_store = simpy.Store(env, capacity=self.req["tasks"])
+        for i in xrange(self.req["tasks"]):
             jid = self.req["id"]
             wall = self.req["end"] - self.req["start"]
             job = Job(self.env, "%s-%s" % (jid, i), wall)
             self.jobs.append(job)
             job_store.put(job)
 
+        # Calculate how much instances I actually need
+        aux = divmod(len(job_store.items), self.instance_type["cpus"])
+        instance_nr = (aux[0] + 1) if aux[0] and aux[1] else aux[0]
+
         # Request the nr instances. This should request N nodes that will
         # accomodate the instances. Then the instances will be spawned in each
         # of the nodes.
-        instance01 = Instance(env, cpus=4, job_store=job_store)
-        instance01
+        instances = []
+        for i in xrange(instance_nr):
+            instances.append(Instance(env,
+                                      cpus=self.instance_type["cpus"],
+                                      job_store=job_store))
 
         for job in self.jobs:
             yield job.finished
@@ -118,7 +128,7 @@ with open("data/trace.dat") as f:
                      "submit": float(req[2]),
                      "start": float(req[3]),
                      "end": float(req[4]),
-                     "nodes": int(req[5]),
+                     "tasks": int(req[5]),
         })
 
 maxTime = max([i["end"] for i in reqs])
@@ -126,6 +136,9 @@ maxTime = max([i["end"] for i in reqs])
 
 ### Model/Experiment ------------------------------
 
+INSTANCE_TYPES = {
+    "m1.small": {"cpus": 4},
+}
 
 def generate(env, reqs):
     for req in reqs:
@@ -133,7 +146,7 @@ def generate(env, reqs):
             print "discarding req %s" % req["id"]
             print req["start"], req["submit"]
             continue
-        r = Request(env, req)
+        r = Request(env, req, "m1.small")
         env.process(r.do())
         yield env.timeout(0)
 
