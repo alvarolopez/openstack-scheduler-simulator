@@ -1,4 +1,3 @@
-import math
 import uuid
 
 import simpy
@@ -16,14 +15,15 @@ class Request(object):
         self.jobs = []
 
     def do(self):
+        # We wait until the request is made by the user. In SimPy2 it was done
+        # by activating the process at a given time using the kwarg "at=", no
+        # longer present
         print self.req["submit"], self.env.now
         yield self.env.timeout(self.req["submit"] - self.env.now)
         print("%2.1f %s > request starts w/ %s tasks" % (env.now, self.name, self.req["tasks"]))
         yield self.env.timeout(1)
-        # TODO: 1.- request nodes, spawn instances, run jobs
-        # Run the job
 
-        # Create all the jobs that will be consumed by the instances
+        # Prepare the jobs
         # FIXME(aloga): the job store is per-instance, we should make it global
         job_store = simpy.Store(env, capacity=self.req["tasks"])
         for i in xrange(self.req["tasks"]):
@@ -33,13 +33,13 @@ class Request(object):
             self.jobs.append(job)
             job_store.put(job)
 
+        # Request instances
         # Calculate how much instances I actually need
         aux = divmod(len(job_store.items), self.instance_type["cpus"])
         instance_nr = (aux[0] + 1) if aux[0] and aux[1] else aux[0]
 
-        # Request the nr instances. This should request N nodes that will
-        # accomodate the instances. Then the instances will be spawned in each
-        # of the nodes.
+        # TODO(aloga): check if we have free instances that may execute jobs
+        # TODO(aloga): request instances from scheduler
         instances = []
         for i in xrange(instance_nr):
             instances.append(Instance(env,
@@ -64,38 +64,52 @@ class Instance(object):
         self.env = env
         self.job_store = job_store
         self.cpus = cpus
-        self.env.process(self.execute())
-#        sim.activate(self, self.execute(), at=env.now())
+        self.jobs = []
+
+        # Boot the machine
+        self.process = self.env.process(self.boot())
+
+        # Wait for 2 hours and shutdown
+        self.env.process(self.shutdown(after=3600 * 24))
+
+    def boot(self):
+        """Simulate the boot process."""
+        print("%2.1f %s > instance starts %s cpus" % (env.now, self.name, self.cpus))
+        yield self.env.timeout(10)
+        self.process = self.env.process(self.execute())
+
+    def shutdown(self, after=3600, soft=True):
+        """Simulate the shutdown."""
+        yield self.env.timeout(after)
+        if soft:
+            for job in self.jobs:
+                yield job.finished
+        self.process.interrupt()
+        print("%2.1f %s > instance finishes" % (env.now, self.name))
 
     def execute(self):
         """Execute all the jobs that this instance can allocate."""
-
-        print("%2.1f %s > instance starts %s cpus" % (env.now, self.name, self.cpus))
-
-        yield self.env.timeout(10)
-#        def get_job(buffer):
-#            result = []
-#            for i in enumerate(buffer):
-#                if i[0] < self.cpus:
-#                    result.append(i[1])
-#            return result
-#
         while True:
             # Get all the jobs that we can execute
 
             # NOTE(aloga): This code will make that the instance executes the
             # jobs in blocks (i.e. until a block has finised it will not get
             # another block.
+            self.jobs = []
             jobs_to_run = min(self.cpus, max(1, len(self.job_store.items)))
-            jobs = []
             for i in xrange(jobs_to_run):
-                job = yield self.job_store.get()
-                print("%2.1f %s > instance will execute job %s" % (env.now, self.name, job.name))
-                jobs.append(job)
+                try:
+                    job = yield self.job_store.get()
+                except simpy.Interrupt:
+                    break
 
-            for job in jobs:
+                print("%2.1f %s > instance will execute job %s" % (env.now, self.name, job.name))
+                self.jobs.append(job)
+
+            for job in self.jobs:
                 # Wait until all jobs are finished
                 yield self.env.process(job.do())
+
 
 
 class Job(object):
