@@ -2,6 +2,7 @@ import uuid
 
 import simpy
 
+import simulator
 ## Model components -----------------------------
 
 
@@ -10,7 +11,7 @@ class Request(object):
     def __init__(self, env, req, instance_type):
         self.req = req
         self.env = env
-        self.instance_type = INSTANCE_TYPES[instance_type]
+        self.instance_type = simulator.INSTANCE_TYPES[instance_type]
         self.name = "r-%(id)s" % req
         self.jobs = []
 
@@ -20,12 +21,12 @@ class Request(object):
         # longer present
         print self.req["submit"], self.env.now
         yield self.env.timeout(self.req["submit"] - self.env.now)
-        print("%2.1f %s > request starts w/ %s tasks" % (env.now, self.name, self.req["tasks"]))
+        print("%2.1f %s > request starts w/ %s tasks" % (self.env.now, self.name, self.req["tasks"]))
         yield self.env.timeout(1)
 
         # Prepare the jobs
         # FIXME(aloga): the job store is per-instance, we should make it global
-        job_store = simpy.Store(env, capacity=self.req["tasks"])
+        job_store = simpy.Store(self.env, capacity=self.req["tasks"])
         for i in xrange(self.req["tasks"]):
             jid = self.req["id"]
             wall = self.req["end"] - self.req["start"]
@@ -42,14 +43,14 @@ class Request(object):
         # TODO(aloga): request instances from scheduler
         instances = []
         for i in xrange(instance_nr):
-            instances.append(Instance(env,
+            instances.append(Instance(self.env,
                                       cpus=self.instance_type["cpus"],
                                       job_store=job_store))
 
         for job in self.jobs:
             yield job.finished
 #        yield sim.waitevent, self, job.stop_event
-        print("%2.1f %s < request end" % (env.now, self.name))
+        print("%2.1f %s < request end" % (self.env.now, self.name))
 #
 #
 #class Node(object):
@@ -74,7 +75,7 @@ class Instance(object):
 
     def boot(self):
         """Simulate the boot process."""
-        print("%2.1f %s > instance starts %s cpus" % (env.now, self.name, self.cpus))
+        print("%2.1f %s > instance starts %s cpus" % (self.env.now, self.name, self.cpus))
         yield self.env.timeout(10)
         self.process = self.env.process(self.execute())
 
@@ -85,7 +86,7 @@ class Instance(object):
             for job in self.jobs:
                 yield job.finished
         self.process.interrupt()
-        print("%2.1f %s > instance finishes" % (env.now, self.name))
+        print("%2.1f %s > instance finishes" % (self.env.now, self.name))
 
     def execute(self):
         """Execute all the jobs that this instance can allocate."""
@@ -103,7 +104,7 @@ class Instance(object):
                 except simpy.Interrupt:
                     break
 
-                print("%2.1f %s > instance will execute job %s" % (env.now, self.name, job.name))
+                print("%2.1f %s > instance will execute job %s" % (self.env.now, self.name, job.name))
                 self.jobs.append(job)
 
             for job in self.jobs:
@@ -121,38 +122,12 @@ class Job(object):
         self.finished = self.env.event()
 
     def do(self):
-        print("%2.1f %s  > job starts (wall %s)" % (env.now, self.name, self.wall))
+        print("%2.1f %s  > job starts (wall %s)" % (self.env.now, self.name, self.wall))
         # Now consume the walltime
         yield self.env.timeout(self.wall)
         print("%2.1f %s  < job ends (wall %s)" % (self.env.now, self.name, self.wall))
         self.finished.succeed()
 
-
-### Experiment data ------------------------------
-
-reqs = []
-with open("data/trace.dat") as f:
-    for req in f.readlines():
-        req = req.strip()
-        if req.startswith("#"):
-            continue
-        req = req.split()
-        reqs.append({"id": req[0],
-                     "owner": req[1],
-                     "submit": float(req[2]),
-                     "start": float(req[3]),
-                     "end": float(req[4]),
-                     "tasks": int(req[5]),
-        })
-
-maxTime = max([i["end"] for i in reqs])
-
-
-### Model/Experiment ------------------------------
-
-INSTANCE_TYPES = {
-    "m1.small": {"cpus": 4},
-}
 
 def generate(env, reqs):
     for req in reqs:
@@ -165,7 +140,8 @@ def generate(env, reqs):
         yield env.timeout(0)
 
 
-env = simpy.Environment()
-env.process(generate(env, reqs))
-# Start processes
-env.run(until=maxTime*3)
+def start(reqs, max_time):
+    env = simpy.Environment()
+    env.process(generate(env, reqs))
+    # Start processes
+    env.run(until=max_time)
