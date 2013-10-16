@@ -1,13 +1,19 @@
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
 import uuid
 
 import simpy
 
 import simulator
-## Model components -----------------------------
 
 
 class Request(object):
-    """A request"""
+    """A request that is scheduled at a given time.
+
+    It creates some tasks, then requests some instances and waits until the
+    tasks have finished.
+    """
+
     def __init__(self, env, req, instance_type):
         self.req = req
         self.env = env
@@ -59,7 +65,11 @@ class Request(object):
 #
 #
 class Instance(object):
-    """One instance can run several jobs."""
+    """An instance.
+
+    It can run several jobs ( #jobs <= #cpus )
+    """
+
     def __init__(self, env, cpus, job_store):
         self.name = uuid.uuid4().hex
         self.env = env
@@ -112,7 +122,6 @@ class Instance(object):
                 yield self.env.process(job.do())
 
 
-
 class Job(object):
     """One Job executed inside an instance."""
     def __init__(self, env, jid, wall):
@@ -122,6 +131,7 @@ class Job(object):
         self.finished = self.env.event()
 
     def do(self):
+        """Do the job."""
         print("%2.1f %s  > job starts (wall %s)" % (self.env.now, self.name, self.wall))
         # Now consume the walltime
         yield self.env.timeout(self.wall)
@@ -130,6 +140,7 @@ class Job(object):
 
 
 def generate(env, reqs):
+    """Generate the request objects from the traces."""
     for req in reqs:
         if req["start"] < req["submit"]:
             print "discarding req %s" % req["id"]
@@ -141,6 +152,7 @@ def generate(env, reqs):
 
 
 def start(reqs, max_time):
+    """Start the simulation until max_time."""
     env = simpy.Environment()
     env.process(generate(env, reqs))
     # Start processes

@@ -1,0 +1,3 @@
+- [ ] pep8
+- [ ] improve output
+- [ ] integrate with nova simulator

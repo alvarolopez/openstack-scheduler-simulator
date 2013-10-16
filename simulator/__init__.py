@@ -1,10 +1,12 @@
-
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
 
 INSTANCE_TYPES = {
     "m1.small": {"cpus": 4},
 }
 
+
 def load_requests(file):
+    """Load requests from file."""
     reqs = []
     with open(file) as f:
         for req in f.readlines():
