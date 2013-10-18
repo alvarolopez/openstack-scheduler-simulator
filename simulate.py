@@ -3,7 +3,6 @@
 import simulator
 from simulator import cloud
 
-
 REQUESTS = simulator.load_requests("data/trace.dat")
 MAX_TIME = max([i["end"] for i in REQUESTS]) * 2
 

@@ -1,3 +1,4 @@
 - [ ] pep8
 - [ ] improve output
 - [ ] integrate with nova simulator
+- [ ] make things configurable (which simulator to use, filters, etc)
