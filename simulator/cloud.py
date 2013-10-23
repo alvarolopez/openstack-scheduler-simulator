@@ -18,8 +18,6 @@ def print_(who, id, what, env=ENV):
           {"time": time, "who": who, "id": id, "what": what})
 
 
-
-
 class Request(object):
     """A request that is scheduled at a given time.
 
@@ -210,9 +208,31 @@ class Host(object):
             "disk": simpy.Container(self.env, self.disk, init=self.disk),
         }
 
+    def _download(self, image):
+        # FIXME(aloga): we should check if the image is the same and wait for
+        # that download only
+        print_("host", self.name, "download %s starts" % image)
+        yield self.env.timeout(10)
+        print_("host", self.name, "download %s ends" % image)
+
+    def _duplicate(self, image):
+        yield self.env.timeout(0)
+
+    def _resize(self, image):
+        yield self.env.timeout(0)
+
+    def _prepare_image(self, instance_ref):
+        image = instance_ref["image"]
+        yield self.env.process(self._download(image))
+        yield self.env.process(self._duplicate(image))
+        yield self.env.process(self._resize(image))
+
     def _create_instance(self, instance_uuid, instance_ref, job_store):
+        yield self.env.process(self._prepare_image(instance_ref))
         instance_type =  instance_ref['instance_type']
-        return Instance(self.env, instance_uuid, instance_type, job_store, self.resources)
+        instance = Instance(self.env, instance_uuid, instance_type, job_store, self.resources)
+        self.instances[instance_uuid] = instance
+        print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
         print_("host", self.name, "terminates %s" % instance_uuid)
@@ -228,9 +248,7 @@ class Host(object):
                 print_("node", self.name, msg)
                 raise scheduler.exception.NoValidHost(reason=msg)
 
-        instance = self._create_instance(instance_uuid, instance_ref, job_store)
-        self.instances[instance_uuid] = instance
-        print_("node", self.name, "spawns instance %s" % instance.name)
+        self.env.process(self._create_instance(instance_uuid, instance_ref, job_store))
 
 
 def generate(env, reqs):

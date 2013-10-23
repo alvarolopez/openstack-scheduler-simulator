@@ -55,7 +55,6 @@ class Flavors(object):
 
         return self.INSTANCE_TYPES.get(name)
 
-
     def get_flavor(self, instance_type_id, ctxt=None, inactive=False):
         """Retrieves single flavor by id."""
         if instance_type_id is None:
@@ -153,11 +152,11 @@ class SchedulerManager(fixtures.Fixture):
         instance_uuid = kwargs["instance"]
         host = kwargs["host"]
         job_store = self.instances[instance_uuid]["job_store"]
-        host.launch_instance(instance_uuid, instance_ref, job_store)
-
         self.instances[instance_uuid]["host"] = host.name
-        # FIXME(BUILD)
+        self.instances[instance_uuid]["state"] = "BUILD"
+        host.launch_instance(instance_uuid, instance_ref, job_store)
         self.instances[instance_uuid]["state"] = "ACTIVE"
+
 
     def add_hosts(self, hosts):
         for i in hosts:
