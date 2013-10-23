@@ -242,6 +242,8 @@ class Host(object):
                             job_store,
                             self.resources)
         self.instances[instance_uuid] = instance
+
+        MANAGER.change_status(instance_uuid, "ACTIVE")
         print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):

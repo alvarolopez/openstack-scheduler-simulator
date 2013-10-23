@@ -142,7 +142,7 @@ class SchedulerManager(fixtures.Fixture):
         if not isinstance(ex, exception.NoValidHost):
             msg = "Exception during schduler run: %s" % ex.message
         else:
-            self.instances[instance_uuid]["state"] = "ERROR"
+            self.instances[instance_uuid]["status"] = "ERROR"
             msg = ("setting instance %s to error (%s)" %
                    (instance_uuid, ex.message))
         simulator.cloud.print_("scheduler", "", msg)
@@ -157,9 +157,11 @@ class SchedulerManager(fixtures.Fixture):
         host = kwargs["host"]
         job_store = self.instances[instance_uuid]["job_store"]
         self.instances[instance_uuid]["host"] = host.name
-        self.instances[instance_uuid]["state"] = "BUILD"
+        self.change_status(instance_uuid, "BUILD")
         host.launch_instance(instance_uuid, instance_ref, job_store)
-        self.instances[instance_uuid]["state"] = "ACTIVE"
+
+    def change_status(self, instance_uuid, status):
+        self.instances[instance_uuid]["status"] = status
 
     def add_hosts(self, hosts):
         for i in hosts:
@@ -174,8 +176,9 @@ class SchedulerManager(fixtures.Fixture):
 
         for instance_uuid in request_spec["instance_uuids"]:
             self.instances[instance_uuid] = {"host": None,
-                                             "state": "SCHEDULE",
+                                             "status": None,
                                              "job_store": job_store}
+            self.change_status(instance_uuid, "SCHEDULE")
 
         context = nova_context.RequestContext(user_id=None,
                                               project_id=None,
@@ -193,14 +196,14 @@ class SchedulerManager(fixtures.Fixture):
                                          legacy_bdm_in_spec=None)
 
     def terminate_instance(self, instance_uuid):
-        instance_status = self.instances.get(instance_uuid, None)
-        if (instance_status and instance_status["state"] in ("ACTIVE",
+        instance_state = self.instances.get(instance_uuid, None)
+        if (instance_state and instance_state["status"] in ("ACTIVE",
                                                              "ERROR",
                                                              "BUILD")):
-            host = instance_status["host"]
-            if instance_status["state"] in ("ACTIVE", "BUILD"):
+            host = instance_state["host"]
+            if instance_state["status"] in ("ACTIVE", "BUILD"):
                 self.hosts[host].terminate_instance(instance_uuid)
-            self.instances[instance_uuid]["state"] = "DELETED"
+            self.change_status(instance_uuid, "DELETED")
         else:
             simulator.cloud.print_("scheduler",
                                    "",
