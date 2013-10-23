@@ -7,7 +7,7 @@ from simulator import scheduler
 
 ENV = simpy.Environment()
 JOB_STORE = simpy.Store(ENV, capacity=1000)
-MANAGER = scheduler.SchedulerManager(ENV)
+MANAGER = fakes.manager
 
 
 def print_(who, id, what, env=ENV):
@@ -60,11 +60,18 @@ class Request(object):
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
-        req = scheduler.create_request_spec(self.instance_type_name, self.image, instance_nr)
-        MANAGER.run_instance(req)
+        req = fakes.create_request_spec(self.instance_type_name, self.image, instance_nr)
+        MANAGER.run_instances(req)
+
+        uuids = req["instance_uuids"]
+
+        print_("request", self.name, "got the following instances: %s" % uuids)
 
         for job in self.jobs:
             yield job.finished
+
+        for u in uuids:
+            MANAGER.terminate_instance(u)
 
         print_("request", self.name, "ends")
 
@@ -88,12 +95,14 @@ class Instance(object):
 
         self.node_resources = node_resources
 
+        self.finished = self.env.event()
+
         # Boot the machine
         self.process = self.env.process(self.boot())
 
         # Wait for 2 hours and shutdown
-        self.env.process(self.shutdown(after=3600 * 24))
-        self.finished = self.env.event()
+#        self.env.process(self.shutdown(after=3600 * 24))
+
 
     def boot(self):
         """Simulate the boot process."""
@@ -198,8 +207,9 @@ class Host(object):
         instance_type =  instance_ref['instance_type']
         return Instance(self.env, name, instance_type, job_store, self.resources)
 
-    def terminate_intance(self, uuid):
-        self.instances.pop(uuid)
+    def terminate_instance(self, uuid):
+        instance = self.instances.pop(uuid)
+        self.env.process(instance.shutdown())
 
     def launch_instance(self, instance_ref):
         for i in ('cpus', 'mem', 'disk'):
@@ -230,7 +240,7 @@ def generate(env, reqs):
                           4,
                           32 * 1024,
                           200 * 1024 * 1024))
-    fakes.add_hosts(hosts)
+    MANAGER.add_hosts(hosts)
 
     for req in reqs:
         if req["start"] < req["submit"]:

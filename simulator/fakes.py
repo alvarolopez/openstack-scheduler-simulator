@@ -1,11 +1,31 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+import uuid
+
 import fixtures
 
+from nova import context as nova_context
 from nova import exception
 import nova.scheduler.driver
+import nova.scheduler.manager
+from nova.scheduler import utils
 
 import simulator.cloud
+
+def create_request_spec(flavor, image, instance_nr):
+    """Create a request spec according"""
+    instances = []
+    for i in xrange(instance_nr):
+        instance = {"uuid": uuid.uuid4().hex}
+        instances.append(instance)
+
+    instance_type = flavors.get_flavor_by_name(flavor)
+
+    request_spec = utils.build_request_spec(None, # Context
+                                            image,
+                                            instances,
+                                            instance_type)
+    return request_spec
 
 
 class Flavors(object):
@@ -63,7 +83,7 @@ class FakeEventReporter(object):
 
 class FakeSchedulerBaseClass(nova.scheduler.driver.Scheduler):
     def hosts_up(self, context, topic):
-        return fixture.get_hosts()
+        return manager.get_hosts()
 
 
 def blank_fn(name):
@@ -72,9 +92,13 @@ def blank_fn(name):
 #        print("called %s" % name)
     return fn
 
-class Fixture(fixtures.Fixture):
+
+class SchedulerManager(fixtures.Fixture):
     def __init__(self):
-        super(Fixture, self).__init__()
+        """Wrap around the nova scheduler."""
+        super(SchedulerManager, self).__init__()
+
+        self.manager = None
         self.hosts = {}
         self.instances = {}
 
@@ -82,10 +106,11 @@ class Fixture(fixtures.Fixture):
         self.useFixture(fixtures.MonkeyPatch(monkey, patch))
 
     def setUp(self):
-        super(Fixture, self).setUp()
+        super(SchedulerManager, self).setUp()
         # utils.build_request_spec
         self._monkey_patch('nova.compute.flavors',
                            flavors)
+
         self._monkey_patch('nova.db.flavor_extra_specs_get',
                            lambda *args: [])
 
@@ -93,31 +118,40 @@ class Fixture(fixtures.Fixture):
         self._monkey_patch('nova.compute.utils.EventReporter',
                            FakeEventReporter)
 
+        # Fixture the base class instead
+#        self._monkey_patch('nova.scheduler.driver.Scheduler.get_hosts',
+#                           self.get_hosts)
+
         self._monkey_patch('nova.scheduler.driver.Scheduler',
                            FakeSchedulerBaseClass)
 
         self._monkey_patch('nova.scheduler.driver.handle_schedule_error',
-                           self.fake_handle_schedule_error)
+                           self._fake_handle_schedule_error)
 
         self._monkey_patch('nova.scheduler.driver.instance_update_db',
                            blank_fn('nova.scheduler.driver.instance_update_db'))
 
         self._monkey_patch('nova.compute.rpcapi.ComputeAPI.run_instance',
-                           self.fake_run_instance)
+                           self._fake_run_instance)
 
-    def fake_handle_schedule_error(self, context, ex, instance_uuid, request_spec):
+        self.manager = nova.scheduler.manager.SchedulerManager(
+            scheduler_driver="nova.scheduler.chance.ChanceScheduler")
+
+    def _fake_handle_schedule_error(self, context, ex, instance_uuid, request_spec):
         if not isinstance(ex, exception.NoValidHost):
             msg = "Exception during schduler run: %s" % ex.message
         else:
             msg = ex.message
         simulator.cloud.print_("scheduler", "", msg)
 
-    def fake_run_instance(self, *args, **kwargs):
+    def _fake_run_instance(self, *args, **kwargs):
         host = kwargs["host"]
         instance_ref = kwargs["request_spec"]
         host.launch_instance(instance_ref)
         uuid = instance_ref['instance_properties']['uuid']
-        self.instances[uuid] = self.host.name
+        self.instances[uuid] = {"host": host.name}
+        print uuid
+        return uuid
 
     def add_hosts(self, hosts):
         for i in hosts:
@@ -126,9 +160,33 @@ class Fixture(fixtures.Fixture):
     def get_hosts(self):
         return self.hosts.values()
 
-fixture = Fixture()
-fixture.setUp()
+    def run_instances(self, request_spec):
+        """Run an instance on a node"""
+        simulator.cloud.print_("scheduler", "", "got request %s" % request_spec)
 
-def add_hosts(hosts):
-    """Add hosts to the fixture."""
-    fixture.add_hosts(hosts)
+        context = nova_context.RequestContext(user_id=None,
+                                              project_id=None,
+                                              is_admin=False,
+                                              read_deleted='no',
+                                              overwrite=False)
+
+        return self.manager.run_instance(context=context,
+                                         request_spec=request_spec,
+                                         admin_password=None,
+                                         injected_files=None,
+                                         requested_networks=None,
+                                         is_first_time=False,
+                                         filter_properties={},
+                                         legacy_bdm_in_spec=None)
+
+    def terminate_instance(self, uuid):
+        host = self.instances.get(uuid, None)["host"]
+        if host:
+            self.instances.pop(uuid)
+            self.hosts[host].terminate_instance(uuid)
+        else:
+            pass
+
+
+manager = SchedulerManager()
+manager.setUp()
