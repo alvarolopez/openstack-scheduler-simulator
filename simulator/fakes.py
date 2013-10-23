@@ -2,7 +2,10 @@
 
 import fixtures
 
+from nova import exception
 import nova.scheduler.driver
+
+import simulator.cloud
 
 
 class Flavors(object):
@@ -12,7 +15,11 @@ class Flavors(object):
     }
 
     INSTANCE_TYPES = {
-        "m1.small": {"cpus": 4, "flavorid": 1},
+        "m1.small": {"cpus": 2,
+                     "mem": 4 * 1024,
+                     "disk": 20 * 1024 * 1024,
+                     "flavorid": 1,
+                     },
     }
 
     def extract_flavor(self):
@@ -68,7 +75,8 @@ def blank_fn(name):
 class Fixture(fixtures.Fixture):
     def __init__(self):
         super(Fixture, self).__init__()
-        self.hosts = []
+        self.hosts = {}
+        self.instances = {}
 
     def _monkey_patch(self, monkey, patch):
         self.useFixture(fixtures.MonkeyPatch(monkey, patch))
@@ -85,26 +93,38 @@ class Fixture(fixtures.Fixture):
         self._monkey_patch('nova.compute.utils.EventReporter',
                            FakeEventReporter)
 
-#        self.useFixture(fixtures.MonkeyPatch(',#
         self._monkey_patch('nova.scheduler.driver.Scheduler',
                            FakeSchedulerBaseClass)
 
+        self._monkey_patch('nova.scheduler.driver.handle_schedule_error',
+                           self.fake_handle_schedule_error)
+
         self._monkey_patch('nova.scheduler.driver.instance_update_db',
                            blank_fn('nova.scheduler.driver.instance_update_db'))
-        # FIXME(aloga): this does not work
+
         self._monkey_patch('nova.compute.rpcapi.ComputeAPI.run_instance',
                            self.fake_run_instance)
 
-    def fake_run_instance(*args, **kwargs):
+    def fake_handle_schedule_error(self, context, ex, instance_uuid, request_spec):
+        if not isinstance(ex, exception.NoValidHost):
+            msg = "Exception during schduler run: %s" % ex.message
+        else:
+            msg = ex.message
+        simulator.cloud.print_("scheduler", "", msg)
+
+    def fake_run_instance(self, *args, **kwargs):
         host = kwargs["host"]
         instance_ref = kwargs["request_spec"]
         host.launch_instance(instance_ref)
+        uuid = instance_ref['instance_properties']['uuid']
+        self.instances[uuid] = self.host.name
 
     def add_hosts(self, hosts):
-        self.hosts = hosts
+        for i in hosts:
+            self.hosts[i.name] = i
 
     def get_hosts(self):
-        return self.hosts
+        return self.hosts.values()
 
 fixture = Fixture()
 fixture.setUp()

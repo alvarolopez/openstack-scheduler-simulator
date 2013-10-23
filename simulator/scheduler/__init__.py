@@ -44,14 +44,14 @@ class SchedulerManager(object):
                                               read_deleted='no',
                                               overwrite=False)
 
-        try:
-            self.manager.run_instance(context=context,
-                                      request_spec=request_spec,
-                                      admin_password=None,
-                                      injected_files=None,
-                                      requested_networks=None,
-                                      is_first_time=False,
-                                      filter_properties={},
-                                      legacy_bdm_in_spec=None)
-        except Exception as e:
-            print "Exception SchedulerManager -> %s" % e
+        self.manager.run_instance(context=context,
+                                  request_spec=request_spec,
+                                  admin_password=None,
+                                  injected_files=None,
+                                  requested_networks=None,
+                                  is_first_time=False,
+                                  filter_properties={},
+                                  legacy_bdm_in_spec=None)
+
+    def terminate_instance(self, uuid):
+        pass
