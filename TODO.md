@@ -3,3 +3,4 @@
 - [ ] integrate with nova simulator
 - [ ] make things configurable (which simulator to use, filters, etc)
 - [ ] query instance status (active, error, etc.)
+- [ ] remove hardcoded status (ACTIVE, ERROR, etc) and use nova statuses

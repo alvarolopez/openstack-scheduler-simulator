@@ -35,7 +35,7 @@ class Flavors(object):
     }
 
     INSTANCE_TYPES = {
-        "m1.small": {"cpus": 2,
+        "m1.small": {"cpus": 4,
                      "mem": 4 * 1024,
                      "disk": 20 * 1024 * 1024,
                      "flavorid": 1,
@@ -129,7 +129,7 @@ class SchedulerManager(fixtures.Fixture):
                            self._fake_handle_schedule_error)
 
         self._monkey_patch('nova.scheduler.driver.instance_update_db',
-                           blank_fn('nova.scheduler.driver.instance_update_db'))
+                           self._fake_db_instance_update)
 
         self._monkey_patch('nova.compute.rpcapi.ComputeAPI.run_instance',
                            self._fake_run_instance)
@@ -141,17 +141,23 @@ class SchedulerManager(fixtures.Fixture):
         if not isinstance(ex, exception.NoValidHost):
             msg = "Exception during schduler run: %s" % ex.message
         else:
-            msg = ex.message
+            self.instances[instance_uuid]["state"] = "ERROR"
+            msg = "setting instance %s to error (%s)" % (instance_uuid, ex.message)
         simulator.cloud.print_("scheduler", "", msg)
 
+    def _fake_db_instance_update(self, context, instance_uuid, extra_values=None):
+        return instance_uuid
+
     def _fake_run_instance(self, *args, **kwargs):
-        host = kwargs["host"]
         instance_ref = kwargs["request_spec"]
-        host.launch_instance(instance_ref)
-        uuid = instance_ref['instance_properties']['uuid']
-        self.instances[uuid] = {"host": host.name}
-        print uuid
-        return uuid
+        instance_uuid = kwargs["instance"]
+        host = kwargs["host"]
+        job_store = self.instances[instance_uuid]["job_store"]
+        host.launch_instance(instance_uuid, instance_ref, job_store)
+
+        self.instances[instance_uuid]["host"] = host.name
+        # FIXME(BUILD)
+        self.instances[instance_uuid]["state"] = "ACTIVE"
 
     def add_hosts(self, hosts):
         for i in hosts:
@@ -160,9 +166,14 @@ class SchedulerManager(fixtures.Fixture):
     def get_hosts(self):
         return self.hosts.values()
 
-    def run_instances(self, request_spec):
+    def run_instance(self, request_spec, job_store):
         """Run an instance on a node"""
         simulator.cloud.print_("scheduler", "", "got request %s" % request_spec)
+
+        for instance_uuid in request_spec["instance_uuids"]:
+            self.instances[instance_uuid] = {"host": None,
+                                             "state": "SCHEDULE",
+                                             "job_store": job_store}
 
         context = nova_context.RequestContext(user_id=None,
                                               project_id=None,
@@ -179,13 +190,15 @@ class SchedulerManager(fixtures.Fixture):
                                          filter_properties={},
                                          legacy_bdm_in_spec=None)
 
-    def terminate_instance(self, uuid):
-        host = self.instances.get(uuid, None)["host"]
-        if host:
-            self.instances.pop(uuid)
-            self.hosts[host].terminate_instance(uuid)
+    def terminate_instance(self, instance_uuid):
+        instance_status = self.instances.get(instance_uuid, None)
+        if instance_status and instance_status["state"] in ("ACTIVE", "ERROR", "BUILD") :
+            host = instance_status["host"]
+            if instance_status["state"] in ("ACTIVE", "BUILD"):
+                self.hosts[host].terminate_instance(instance_uuid)
+            self.instances[instance_uuid]["state"] = "DELETED"
         else:
-            pass
+            simulator.cloud.print_("scheduler", "", "unknown instance %s" % instance_uuid)
 
 
 manager = SchedulerManager()

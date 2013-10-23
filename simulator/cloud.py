@@ -6,7 +6,8 @@ from simulator import fakes
 from simulator import scheduler
 
 ENV = simpy.Environment()
-JOB_STORE = simpy.Store(ENV, capacity=1000)
+#JOB_STORE = simpy.Store(ENV, capacity=1000)
+JOB_STORE=None
 MANAGER = fakes.manager
 
 
@@ -40,15 +41,16 @@ class Request(object):
         # We wait until the request is made by the user. In SimPy2 it was done
         # by activating the process at a given time using the kwarg "at=", no
         # longer present
-#        print self.req["submit"], self.env.now
         yield self.env.timeout(self.req["submit"] - self.env.now)
+        start = self.env.now
         print_("request", self.name, "start w/ %s tasks" % self.req["tasks"])
         yield self.env.timeout(1)
 
         # Prepare the jobs
+        jid = self.req["id"]
+        wall = self.req["end"] - self.req["start"]
+        expected_elapsed = self.req["end"] - self.req["submit"]
         for i in xrange(self.req["tasks"]):
-            jid = self.req["id"]
-            wall = self.req["end"] - self.req["start"]
             job = Job(self.env, "%s-%s" % (jid, i), wall)
             self.jobs.append(job)
             self.job_store.put(job)
@@ -61,19 +63,22 @@ class Request(object):
 
         # Request the instance_nr that we need
         req = fakes.create_request_spec(self.instance_type_name, self.image, instance_nr)
-        MANAGER.run_instances(req)
+        MANAGER.run_instance(req, self.job_store)
 
-        uuids = req["instance_uuids"]
+        instance_uuids = req["instance_uuids"]
 
-        print_("request", self.name, "got the following instances: %s" % uuids)
+        print_("request", self.name, "got the following instances: %s" % instance_uuids)
 
         for job in self.jobs:
             yield job.finished
 
-        for u in uuids:
-            MANAGER.terminate_instance(u)
+        end = self.env.now
+        for instance_uuid in instance_uuids:
+            pass
+            MANAGER.terminate_instance(instance_uuid)
 
-        print_("request", self.name, "ends")
+        msg = "ends. expected wall %s, expected elapsed %s, elapsed %s" % (wall, expected_elapsed, end - start)
+        print_("request", self.name, msg)
 
 
 class Instance(object):
@@ -89,7 +94,6 @@ class Instance(object):
         self.cpus = instance_type["cpus"]
         self.mem = instance_type["mem"]
         self.disk = instance_type["disk"]
-        self.jobs = []
 
         self.boot_time = 10  # seconds
 
@@ -120,12 +124,9 @@ class Instance(object):
         yield self.env.timeout(self.boot_time)
         self.process = self.env.process(self.execute())
 
-    def shutdown(self, after=3600, soft=True):
+    def shutdown(self, after=0):
         """Simulate the shutdown."""
         yield self.env.timeout(after)
-        if soft:
-            for job in self.jobs:
-                yield job.finished
         self.process.interrupt()
         print_("instance", self.name, "finishes")
 
@@ -141,30 +142,37 @@ class Instance(object):
 
     def execute(self):
         """Execute all the jobs that this instance can allocate."""
+
         while True:
+            jobs = []
 
-            # NOTE(aloga): This code will make that the instance executes the
-            # jobs in blocks (i.e. until a block has finised it will not get
-            # another block.
-            self.jobs = []
-            jobs_to_run = min(self.cpus, max(1, len(self.job_store.items)))
-            for i in xrange(jobs_to_run):
-                # Get all the jobs that we can execute
-                try:
-                    job = yield self.job_store.get()
-                except simpy.Interrupt:
-                    return
+            # Start executing jobs
+            # If we want to execute jobs in blocs (instead of start consuming)
+            # we can get the number of jobs to get with the following
+#            jobs_to_run = min(self.cpus, max(1, len(self.job_store.items)))
+            for job in xrange(self.cpus):
+                with self.job_store.get() as req:
+                    try:
+                        result = yield req | self.env.timeout(1)
+                    except simpy.Interrupt:
+                        return
 
-                print_("instance", self.name, "executes job %s" % job.name)
-                self.jobs.append(job)
+                    if req in result:
+                        job = result[req]
+                        jobs.append(job)
+                    else:
+                        break
 
-            for job in self.jobs:
+            for job in jobs:
                 # Start the jobs
                 job.start()
 
-            for job in self.jobs:
+            for job in jobs:
                 # Wait until all jobs are finished
-                yield job.finished
+                try:
+                    yield job.finished
+                except simpy.Interrupt:
+                    return
 
 
 class Job(object):
@@ -202,16 +210,16 @@ class Host(object):
             "disk": simpy.Container(self.env, self.disk, init=self.disk),
         }
 
-    def _create_instance(self, instance_ref, job_store=JOB_STORE):
-        name = instance_ref['instance_properties']['uuid']
+    def _create_instance(self, instance_uuid, instance_ref, job_store):
         instance_type =  instance_ref['instance_type']
-        return Instance(self.env, name, instance_type, job_store, self.resources)
+        return Instance(self.env, instance_uuid, instance_type, job_store, self.resources)
 
-    def terminate_instance(self, uuid):
-        instance = self.instances.pop(uuid)
+    def terminate_instance(self, instance_uuid):
+        print_("host", self.name, "terminates %s" % instance_uuid)
+        instance = self.instances.pop(instance_uuid)
         self.env.process(instance.shutdown())
 
-    def launch_instance(self, instance_ref):
+    def launch_instance(self, instance_uuid, instance_ref, job_store=JOB_STORE):
         for i in ('cpus', 'mem', 'disk'):
             res = instance_ref['instance_type'][i]
             if res > self.resources[i].level:
@@ -220,9 +228,8 @@ class Host(object):
                 print_("node", self.name, msg)
                 raise scheduler.exception.NoValidHost(reason=msg)
 
-        instance = self._create_instance(instance_ref)
-        uuid = instance_ref["instance_properties"]["uuid"]
-        self.instances[uuid] = instance
+        instance = self._create_instance(instance_uuid, instance_ref, job_store)
+        self.instances[instance_uuid] = instance
         print_("node", self.name, "spawns instance %s" % instance.name)
 
 
@@ -249,7 +256,8 @@ def generate(env, reqs):
 
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
-        r = Request(env, req, "m1.small")
+        job_store = simpy.Store(ENV, capacity=1000)
+        r = Request(env, req, "m1.small", job_store=job_store)
         env.process(r.do())
         yield env.timeout(0)
 
