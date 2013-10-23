@@ -1,5 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+
 def load_requests(file):
     """Load requests from file."""
     reqs = []
@@ -14,6 +15,5 @@ def load_requests(file):
                          "submit": float(req[2]),
                          "start": float(req[3]),
                          "end": float(req[4]),
-                         "tasks": int(req[5]),
-            })
+                         "tasks": int(req[5]), })
     return reqs

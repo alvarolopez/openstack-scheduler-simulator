@@ -7,7 +7,7 @@ from simulator import scheduler
 
 ENV = simpy.Environment()
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
-JOB_STORE=None
+JOB_STORE = None
 MANAGER = fakes.manager
 
 
@@ -29,7 +29,8 @@ class Request(object):
         self.req = req
         self.env = env
         self.instance_type_name = instance_type_name
-        self.instance_type = fakes.flavors.get_flavor_by_name(instance_type_name)
+        self.instance_type = fakes.flavors.get_flavor_by_name(
+            instance_type_name)
         self.image = {}
         self.name = "r-%(id)s" % req
         self.jobs = []
@@ -60,12 +61,14 @@ class Request(object):
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
-        req = fakes.create_request_spec(self.instance_type_name, self.image, instance_nr)
+        req = fakes.create_request_spec(self.instance_type_name,
+                                        self.image,
+                                        instance_nr)
         MANAGER.run_instance(req, self.job_store)
 
         instance_uuids = req["instance_uuids"]
 
-        print_("request", self.name, "got the following instances: %s" % instance_uuids)
+        print_("request", self.name, "got instances: %s" % instance_uuids)
 
         for job in self.jobs:
             yield job.finished
@@ -75,7 +78,9 @@ class Request(object):
             pass
             MANAGER.terminate_instance(instance_uuid)
 
-        msg = "ends. expected wall %s, expected elapsed %s, elapsed %s" % (wall, expected_elapsed, end - start)
+        msg = ("ends. expected wall %s, "
+               "expected elapsed %s, "
+               "elapsed %s" % (wall, expected_elapsed, end - start))
         print_("request", self.name, msg)
 
 
@@ -105,7 +110,6 @@ class Instance(object):
         # Wait for 2 hours and shutdown
 #        self.env.process(self.shutdown(after=3600 * 24))
 
-
     def boot(self):
         """Simulate the boot process."""
         # Consume the node_resources 1st. Do not check if they're available,
@@ -115,7 +119,9 @@ class Instance(object):
             if amount == 0:
                 continue
             self.node_resources[resource].get(amount)
-            print_("instance", self.name, "consumes %s %s" % (amount, resource))
+            print_("instance",
+                   self.name,
+                   "consumes %s %s" % (amount, resource))
 
         # Spawn
         print_("instance", self.name, "starts w/ %s cpus" % self.cpus)
@@ -229,8 +235,12 @@ class Host(object):
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         yield self.env.process(self._prepare_image(instance_ref))
-        instance_type =  instance_ref['instance_type']
-        instance = Instance(self.env, instance_uuid, instance_type, job_store, self.resources)
+        instance_type = instance_ref['instance_type']
+        instance = Instance(self.env,
+                            instance_uuid,
+                            instance_type,
+                            job_store,
+                            self.resources)
         self.instances[instance_uuid] = instance
         print_("node", self.name, "spawns instance %s" % instance.name)
 
@@ -239,7 +249,8 @@ class Host(object):
         instance = self.instances.pop(instance_uuid)
         self.env.process(instance.shutdown())
 
-    def launch_instance(self, instance_uuid, instance_ref, job_store=JOB_STORE):
+    def launch_instance(self, instance_uuid,
+                        instance_ref, job_store=JOB_STORE):
         for i in ('cpus', 'mem', 'disk'):
             res = instance_ref['instance_type'][i]
             if res > self.resources[i].level:
@@ -248,7 +259,9 @@ class Host(object):
                 print_("node", self.name, msg)
                 raise scheduler.exception.NoValidHost(reason=msg)
 
-        self.env.process(self._create_instance(instance_uuid, instance_ref, job_store))
+        self.env.process(self._create_instance(instance_uuid,
+                                               instance_ref,
+                                               job_store))
 
 
 def generate(env, reqs):
@@ -278,8 +291,6 @@ def generate(env, reqs):
         r = Request(env, req, "m1.small", job_store=job_store)
         env.process(r.do())
         yield env.timeout(0)
-
-
 
 
 def start(reqs, max_time, env=ENV):
