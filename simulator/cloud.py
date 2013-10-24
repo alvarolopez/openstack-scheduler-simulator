@@ -1,5 +1,10 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+#import datetime
+#import os
+import random
+import uuid
+
 import simpy
 
 from simulator import fakes
@@ -9,6 +14,10 @@ ENV = simpy.Environment()
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
 JOB_STORE = None
 MANAGER = fakes.manager
+
+#OUTDIR = os.path.join("output",
+#                      datetime.datetime.now().isoformat())
+#os.makedirs(OUTDIR)
 
 
 def print_(who, id, what, env=ENV):
@@ -31,7 +40,8 @@ class Request(object):
         self.instance_type_name = instance_type_name
         self.instance_type = fakes.flavors.get_flavor_by_name(
             instance_type_name)
-        self.image = {}
+        self.image = {"uuid": uuid.uuid4().hex,
+                      "size": 0}
         self.name = "r-%(id)s" % req
         self.jobs = []
         self.job_store = job_store
@@ -98,7 +108,7 @@ class Instance(object):
         self.mem = instance_type["mem"]
         self.disk = instance_type["disk"]
 
-        self.boot_time = 10  # seconds
+        self.boot_time = round(random.uniform(10, 20))
 
         self.node_resources = node_resources
 
@@ -111,7 +121,11 @@ class Instance(object):
 #        self.env.process(self.shutdown(after=3600 * 24))
 
     def boot(self):
-        """Simulate the boot process."""
+        """Simulate the boot process.
+
+        Before actually booting the image, we will consume resources from
+        the host.
+        """
         # Consume the node_resources 1st. Do not check if they're available,
         # since check was made upstream
         for resource in ("cpus", "mem", "disk"):
@@ -129,7 +143,10 @@ class Instance(object):
         self.process = self.env.process(self.execute())
 
     def shutdown(self, after=0):
-        """Simulate the shutdown."""
+        """Simulate the shutdown.
+
+        After shutting the instance down, free the allocated resources.
+        """
         yield self.env.timeout(after)
         self.process.interrupt()
         print_("instance", self.name, "finishes")
@@ -146,7 +163,6 @@ class Instance(object):
 
     def execute(self):
         """Execute all the jobs that this instance can allocate."""
-
         while True:
             jobs = []
 
@@ -214,26 +230,47 @@ class Host(object):
             "disk": simpy.Container(self.env, self.disk, init=self.disk),
         }
 
-    def _download(self, image):
-        # FIXME(aloga): we should check if the image is the same and wait for
-        # that download only
-        print_("host", self.name, "download %s starts" % image)
-        yield self.env.timeout(10)
-        print_("host", self.name, "download %s ends" % image)
+        self.images = {}
+
+    def _download(self, image_uuid):
+        """Download an image to disk."""
+        print_("host", self.name, "download %s starts" % image_uuid)
+        yield self.env.timeout(0)  # FIXME(aloga): model this
+        print_("host", self.name, "download %s ends" % image_uuid)
+        self.images[image_uuid]["status"] = "DOWNLOADED"
+        self.images[image_uuid]["downloaded"].succeed()
 
     def _duplicate(self, image):
-        yield self.env.timeout(0)
+        """Copy the image so that we can use it."""
+        yield self.env.timeout(0)  # FIXME(aloga): model this
 
     def _resize(self, image):
-        yield self.env.timeout(0)
+        """Resize the image to the actual size."""
+        yield self.env.timeout(0)  # FIXME(aloga): model this
 
     def _prepare_image(self, instance_ref):
+        """Prepare the image before we spawn the instance.
+
+        This method will either download the image or wait until it has been
+        downloaded (if there's another download in progress). Then it will
+        duplicate and resize the image.
+        """
         image = instance_ref["image"]
-        yield self.env.process(self._download(image))
+        image_uuid = image["uuid"]
+        self.images.setdefault(image_uuid,
+                               {"status": None,
+                                "downloaded": self.env.event()})
+        status = self.images[image_uuid]["status"]
+        if status not in ("DOWNLOADED", "DOWNLOADING"):
+            self.images[image_uuid]["status"] = "DOWNLOADING"
+            yield self.env.process(self._download(image_uuid))
+        elif status == "DOWNLOADING":
+            yield self.images[image_uuid]["downloaded"]
         yield self.env.process(self._duplicate(image))
         yield self.env.process(self._resize(image))
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
+        """Actually create the image."""
         yield self.env.process(self._prepare_image(instance_ref))
         instance_type = instance_ref['instance_type']
         instance = Instance(self.env,
@@ -247,12 +284,19 @@ class Host(object):
         print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
+        """Terminate the instance."""
         print_("host", self.name, "terminates %s" % instance_uuid)
         instance = self.instances.pop(instance_uuid)
         self.env.process(instance.shutdown())
 
     def launch_instance(self, instance_uuid,
                         instance_ref, job_store=JOB_STORE):
+        """Launch an instance if we can allocate it.
+
+        We will raise a scheduler.exception.NoValidHost if we cannot
+        allocate resource for the image. FIXME(aloga): we should raise
+        nova.exception.ComputeResourcesUnavailable ?
+        """
         for i in ('cpus', 'mem', 'disk'):
             res = instance_ref['instance_type'][i]
             if res > self.resources[i].level:

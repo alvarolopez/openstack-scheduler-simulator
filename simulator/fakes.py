@@ -198,8 +198,8 @@ class SchedulerManager(fixtures.Fixture):
     def terminate_instance(self, instance_uuid):
         instance_state = self.instances.get(instance_uuid, None)
         if (instance_state and instance_state["status"] in ("ACTIVE",
-                                                             "ERROR",
-                                                             "BUILD")):
+                                                            "ERROR",
+                                                            "BUILD")):
             host = instance_state["host"]
             if instance_state["status"] in ("ACTIVE", "BUILD"):
                 self.hosts[host].terminate_instance(instance_uuid)
