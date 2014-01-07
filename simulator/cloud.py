@@ -7,8 +7,9 @@ import uuid
 
 import simpy
 
+from nova import exception
+
 from simulator import fakes
-from simulator import scheduler
 
 ENV = simpy.Environment()
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
@@ -293,7 +294,7 @@ class Host(object):
                         instance_ref, job_store=JOB_STORE):
         """Launch an instance if we can allocate it.
 
-        We will raise a scheduler.exception.NoValidHost if we cannot
+        We will raise a exception.NoValidHost if we cannot
         allocate resource for the image. FIXME(aloga): we should raise
         nova.exception.ComputeResourcesUnavailable ?
         """
@@ -303,7 +304,7 @@ class Host(object):
                 msg = ("cannot spawn instance ( %s > %s %s)" %
                        (res, self.resources[i].level, i))
                 print_("node", self.name, msg)
-                raise scheduler.exception.NoValidHost(reason=msg)
+                raise exception.NoValidHost(reason=msg)
 
         self.env.process(self._create_instance(instance_uuid,
                                                instance_ref,
