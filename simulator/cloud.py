@@ -41,8 +41,9 @@ class Request(object):
         self.instance_type_name = instance_type_name
         self.instance_type = fakes.flavors.get_flavor_by_name(
             instance_type_name)
+        # FIXME(aloga): this should be stored in the catalog
         self.image = {"uuid": uuid.uuid4().hex,
-                      "size": 0}
+                      "size": 10}
         self.name = "r-%(id)s" % req
         self.jobs = []
         self.job_store = job_store
@@ -216,6 +217,34 @@ class Job(object):
         self.finished.succeed()
 
 
+class Catalog(object):
+    """The catalog serves images to hosts."""
+    def __init__(self, env, name):
+        self.name = name
+        self.env = env
+        self.bw = 1.0  # Gbit
+        self.chunk_size = 256.0
+        self.downloads = simpy.Container(env)
+
+    def download(self, image):
+        yield self.downloads.put(1)
+
+        print_("catalog", "", "serving %(uuid)s, %(size)fG" % image)
+
+        size = image["size"] * 8 * 1024
+        served = 0
+        while served < size:
+            download_nr = self.downloads.level
+            penalty = random.uniform(0.8, 0.9)
+            bw = penalty * self.bw * 1024
+            bw = bw / download_nr
+            download_time = self.chunk_size / bw
+            yield self.env.timeout(download_time)
+            served += self.chunk_size
+
+        yield self.downloads.get(1)
+
+
 class Host(object):
     """One node can run several instances."""
     def __init__(self, env, name, cpus, mem, disk):
@@ -231,23 +260,34 @@ class Host(object):
             "disk": simpy.Container(self.env, self.disk, init=self.disk),
         }
 
+        self.disk_bw = 0.2
+
         self.images = {}
 
-    def _download(self, image_uuid):
+    def _download(self, image):
         """Download an image to disk."""
-        print_("host", self.name, "download %s starts" % image_uuid)
-        yield self.env.timeout(0)  # FIXME(aloga): model this
-        print_("host", self.name, "download %s ends" % image_uuid)
+        image_uuid = image["uuid"]
+
+        print_("host", self.name, "download of %s starts" % image_uuid)
+        catalog = CONF["catalog"]
+        # Download the image from the catalog
+        yield self.env.process(catalog.download(image))
+        print_("host", self.name, "download of %s ends" % image_uuid)
         self.images[image_uuid]["status"] = "DOWNLOADED"
         self.images[image_uuid]["downloaded"].succeed()
 
     def _duplicate(self, image):
         """Copy the image so that we can use it."""
-        yield self.env.timeout(0)  # FIXME(aloga): model this
+        variation = random.uniform(0.9, 1)
+        copy_time = variation * image["size"] / self.disk_bw
+        yield self.env.timeout(copy_time)
 
     def _resize(self, image):
         """Resize the image to the actual size."""
-        yield self.env.timeout(0)  # FIXME(aloga): model this
+        variation = random.uniform(0.9, 1)
+        resize_time = variation * 0
+        # FIXME(aloga): we need to model this too
+        yield self.env.timeout(resize_time)
 
     def _prepare_image(self, instance_ref):
         """Prepare the image before we spawn the instance.
@@ -264,7 +304,7 @@ class Host(object):
         status = self.images[image_uuid]["status"]
         if status not in ("DOWNLOADED", "DOWNLOADING"):
             self.images[image_uuid]["status"] = "DOWNLOADING"
-            yield self.env.process(self._download(image_uuid))
+            yield self.env.process(self._download(image))
         elif status == "DOWNLOADING":
             yield self.images[image_uuid]["downloaded"]
         yield self.env.process(self._duplicate(image))
@@ -310,6 +350,8 @@ class Host(object):
                                                instance_ref,
                                                job_store))
 
+# FIXME
+CONF = {}
 
 def generate(env, reqs):
     """Generate the needed objects for the simulation.
@@ -317,6 +359,9 @@ def generate(env, reqs):
     This function will generate the request objects from the traces and
     the hosts where the instances will be spawned
     """
+
+    CONF["catalog"] = Catalog(env, "catalog")
+
     # FIME(aloga): really simplistic
     hosts = []
     for i in xrange(32):
