@@ -13,12 +13,12 @@ opts = [
     cfg.StrOpt('trace_file',
                metavar='TRACE_FILE',
                default='data/trace.dat',
-#               help=_('Path to simulation definition')),
                help=('Path to traces to process.')),
     ]
 
 CONF = cfg.CONF
 CONF.register_opts(opts, group='simulator')
+
 
 def main():
     config.parse_args(sys.argv)

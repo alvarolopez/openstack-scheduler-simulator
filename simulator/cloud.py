@@ -1,7 +1,5 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
-#import datetime
-#import os
 import random
 import uuid
 
@@ -17,11 +15,6 @@ from simulator import utils
 ENV = simulator.ENV
 MANAGER = simulator.scheduler.manager
 CATALOG = simulator.catalog.CATALOG
-
-#OUTDIR = os.path.join("output",
-#                      datetime.datetime.now().isoformat())
-#os.makedirs(OUTDIR)
-
 
 
 class Request(object):
@@ -50,7 +43,9 @@ class Request(object):
         # longer present
         yield ENV.timeout(self.req["submit"] - ENV.now)
         start = ENV.now
-        utils.print_("request", self.name, "start w/ %s tasks" % self.req["tasks"])
+        utils.print_("request",
+                     self.name,
+                     "start w/ %s tasks" % self.req["tasks"])
         yield ENV.timeout(1)
 
         # Prepare the jobs
@@ -70,14 +65,16 @@ class Request(object):
 
         # Request the instance_nr that we need
         req = simulator.scheduler.create_request_spec(
-                self.instance_type_name,
-                self.image,
-                instance_nr)
+            self.instance_type_name,
+            self.image,
+            instance_nr)
         MANAGER.run_instance(req, self.job_store)
 
         instance_uuids = req["instance_uuids"]
 
-        utils.print_("request", self.name, "got instances: %s" % instance_uuids)
+        utils.print_("request",
+                     self.name,
+                     "got instances: %s" % instance_uuids)
 
         for job in self.jobs:
             yield job.finished
@@ -156,7 +153,9 @@ class Instance(object):
             if amount == 0:
                 continue
             self.node_resources[resource].put(amount)
-            utils.print_("instance", self.name, "frees %s %s" % (amount, resource))
+            utils.print_("instance",
+                         self.name,
+                         "frees %s %s" % (amount, resource))
 
         self.finished.succeed()
 
@@ -314,8 +313,8 @@ class Host(object):
                 raise exception.NoValidHost(reason=msg)
 
         ENV.process(self._create_instance(instance_uuid,
-                                               instance_ref,
-                                               job_store))
+                                          instance_ref,
+                                          job_store))
 
 
 def generate(reqs):
