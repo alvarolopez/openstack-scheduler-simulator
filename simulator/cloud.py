@@ -11,13 +11,13 @@ from nova import exception
 
 import simulator
 import simulator.catalog
-from simulator import fakes
+from simulator import scheduler
 from simulator import utils
 
 ENV = simulator.ENV
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
 JOB_STORE = None
-MANAGER = fakes.manager
+MANAGER = simulator.scheduler.manager
 CATALOG = simulator.catalog.CATALOG
 
 #OUTDIR = os.path.join("output",
@@ -37,7 +37,7 @@ class Request(object):
         self.req = req
 
         self.instance_type_name = instance_type_name
-        self.instance_type = fakes.flavors.get_flavor_by_name(
+        self.instance_type = simulator.scheduler.flavors.get_flavor_by_name(
             instance_type_name)
         # FIXME(aloga): this should be stored in the catalog
         self.image = {"uuid": uuid.uuid4().hex,
@@ -71,9 +71,10 @@ class Request(object):
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
-        req = fakes.create_request_spec(self.instance_type_name,
-                                        self.image,
-                                        instance_nr)
+        req = simulator.scheduler.create_request_spec(
+                self.instance_type_name,
+                self.image,
+                instance_nr)
         MANAGER.run_instance(req, self.job_store)
 
         instance_uuids = req["instance_uuids"]
