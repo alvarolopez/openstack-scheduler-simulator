@@ -9,9 +9,9 @@ from nova import context as nova_context
 from nova import exception
 import nova.scheduler.driver
 import nova.scheduler.manager
-from nova.scheduler import utils
+import nova.scheduler.utils
 
-import simulator.cloud
+from simulator import utils
 
 CONF = cfg.CONF
 
@@ -25,10 +25,10 @@ def create_request_spec(flavor, image, instance_nr):
 
     instance_type = flavors.get_flavor_by_name(flavor)
 
-    request_spec = utils.build_request_spec(None,  # Context
-                                            image,
-                                            instances,
-                                            instance_type)
+    request_spec = nova.scheduler.utils.build_request_spec(None,  # Context
+                                                           image,
+                                                           instances,
+                                                           instance_type)
     return request_spec
 
 
@@ -148,7 +148,7 @@ class SchedulerManager(fixtures.Fixture):
             self.instances[instance_uuid]["status"] = "ERROR"
             msg = ("setting instance %s to error (%s)" %
                    (instance_uuid, ex.message))
-        simulator.cloud.print_("scheduler", "", msg)
+        utils.print_("scheduler", "", msg)
 
     def _fake_db_instance_update(self, context,
                                  instance_uuid, extra_values=None):
@@ -175,7 +175,7 @@ class SchedulerManager(fixtures.Fixture):
 
     def run_instance(self, request_spec, job_store):
         """Run an instance on a node"""
-        simulator.cloud.print_("scheduler", "", "got req %s" % request_spec)
+        utils.print_("scheduler", "", "got req %s" % request_spec)
 
         for instance_uuid in request_spec["instance_uuids"]:
             self.instances[instance_uuid] = {"host": None,
@@ -208,9 +208,9 @@ class SchedulerManager(fixtures.Fixture):
                 self.hosts[host].terminate_instance(instance_uuid)
             self.change_status(instance_uuid, "DELETED")
         else:
-            simulator.cloud.print_("scheduler",
-                                   "",
-                                   "unknown instance %s" % instance_uuid)
+            utils.print_("scheduler",
+                         "",
+                         "unknown instance %s" % instance_uuid)
 
 
 manager = SchedulerManager()

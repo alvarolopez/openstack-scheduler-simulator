@@ -11,6 +11,7 @@ from nova import exception
 
 import simulator
 from simulator import fakes
+from simulator import utils
 
 ENV = simulator.ENV
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
@@ -21,12 +22,6 @@ MANAGER = fakes.manager
 #                      datetime.datetime.now().isoformat())
 #os.makedirs(OUTDIR)
 
-
-def print_(who, id, what):
-    time = ENV.now
-    id = id[:15]
-    print("%(time)2.1f %(who)10s %(id)15s %(what)s" %
-          {"time": time, "who": who, "id": id, "what": what})
 
 
 class Request(object):
@@ -55,7 +50,7 @@ class Request(object):
         # longer present
         yield ENV.timeout(self.req["submit"] - ENV.now)
         start = ENV.now
-        print_("request", self.name, "start w/ %s tasks" % self.req["tasks"])
+        utils.print_("request", self.name, "start w/ %s tasks" % self.req["tasks"])
         yield ENV.timeout(1)
 
         # Prepare the jobs
@@ -81,7 +76,7 @@ class Request(object):
 
         instance_uuids = req["instance_uuids"]
 
-        print_("request", self.name, "got instances: %s" % instance_uuids)
+        utils.print_("request", self.name, "got instances: %s" % instance_uuids)
 
         for job in self.jobs:
             yield job.finished
@@ -94,7 +89,7 @@ class Request(object):
         msg = ("ends. expected wall %s, "
                "expected elapsed %s, "
                "elapsed %s" % (wall, expected_elapsed, end - start))
-        print_("request", self.name, msg)
+        utils.print_("request", self.name, msg)
 
 
 class Instance(object):
@@ -136,12 +131,12 @@ class Instance(object):
             if amount == 0:
                 continue
             self.node_resources[resource].get(amount)
-            print_("instance",
-                   self.name,
-                   "consumes %s %s" % (amount, resource))
+            utils.print_("instance",
+                         self.name,
+                         "consumes %s %s" % (amount, resource))
 
         # Spawn
-        print_("instance", self.name, "starts w/ %s cpus" % self.cpus)
+        utils.print_("instance", self.name, "starts w/ %s cpus" % self.cpus)
         yield ENV.timeout(self.boot_time)
         self.process = ENV.process(self.execute())
 
@@ -152,7 +147,7 @@ class Instance(object):
         """
         yield ENV.timeout(after)
         self.process.interrupt()
-        print_("instance", self.name, "finishes")
+        utils.print_("instance", self.name, "finishes")
 
         # Free the node_resources
         for resource in ("cpus", "mem", "disk"):
@@ -160,7 +155,7 @@ class Instance(object):
             if amount == 0:
                 continue
             self.node_resources[resource].put(amount)
-            print_("instance", self.name, "frees %s %s" % (amount, resource))
+            utils.print_("instance", self.name, "frees %s %s" % (amount, resource))
 
         self.finished.succeed()
 
@@ -211,10 +206,10 @@ class Job(object):
 
     def do(self):
         """Do the job."""
-        print_("job", self.name, "starts (wall %s)" % self.wall)
+        utils.print_("job", self.name, "starts (wall %s)" % self.wall)
         # Now consume the walltime
         yield ENV.timeout(self.wall)
-        print_("job", self.name, "ends (wall %s)" % self.wall)
+        utils.print_("job", self.name, "ends (wall %s)" % self.wall)
         self.finished.succeed()
 
 
@@ -230,7 +225,7 @@ class Catalog(object):
     def download(self, image):
         yield self.downloads.put(1)
 
-        print_("catalog", "", "serving %(uuid)s, %(size)fG" % image)
+        utils.print_("catalog", "", "serving %(uuid)s, %(size)fG" % image)
 
         size = image["size"] * 8 * 1024
         served = 0
@@ -272,10 +267,10 @@ class Host(object):
         """Download an image to disk."""
         image_uuid = image["uuid"]
 
-        print_("host", self.name, "download of %s starts" % image_uuid)
+        utils.print_("host", self.name, "download of %s starts" % image_uuid)
         # Download the image from the catalog
         yield ENV.process(CATALOG.download(image))
-        print_("host", self.name, "download of %s ends" % image_uuid)
+        utils.print_("host", self.name, "download of %s ends" % image_uuid)
         self.images[image_uuid]["status"] = "DOWNLOADED"
         self.images[image_uuid]["downloaded"].succeed()
 
@@ -324,11 +319,11 @@ class Host(object):
         self.instances[instance_uuid] = instance
 
         MANAGER.change_status(instance_uuid, "ACTIVE")
-        print_("node", self.name, "spawns instance %s" % instance.name)
+        utils.print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
         """Terminate the instance."""
-        print_("host", self.name, "terminates %s" % instance_uuid)
+        utils.print_("host", self.name, "terminates %s" % instance_uuid)
         instance = self.instances.pop(instance_uuid)
         ENV.process(instance.shutdown())
 
@@ -345,7 +340,7 @@ class Host(object):
             if res > self.resources[i].level:
                 msg = ("cannot spawn instance ( %s > %s %s)" %
                        (res, self.resources[i].level, i))
-                print_("node", self.name, msg)
+                utils.print_("node", self.name, msg)
                 raise exception.NoValidHost(reason=msg)
 
         ENV.process(self._create_instance(instance_uuid,
