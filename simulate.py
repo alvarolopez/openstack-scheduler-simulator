@@ -23,11 +23,7 @@ CONF.register_opts(opts, group='simulator')
 def main():
     config.parse_args(sys.argv)
 
-    REQUESTS = simulator.load_requests(CONF.simulator.trace_file)
-    MAX_TIME = max([i["end"] for i in REQUESTS]) * 30
-
-    cloud.MANAGER.setUp()
-    cloud.start(REQUESTS, MAX_TIME)
+    cloud.start()
 
 
 if __name__ == "__main__":

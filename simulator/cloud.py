@@ -5,12 +5,16 @@ import uuid
 
 import simpy
 
+from oslo.config import cfg
+
 from nova import exception
 
 import simulator
 import simulator.catalog
 from simulator import scheduler
 from simulator import utils
+
+CONF = cfg.CONF
 
 ENV = simulator.ENV
 MANAGER = simulator.scheduler.manager
@@ -346,8 +350,13 @@ def generate(reqs):
         yield ENV.timeout(0)
 
 
-def start(reqs, max_time):
+def start():
     """Start the simulation until max_time."""
+
+    reqs = utils.load_requests(CONF.simulator.trace_file)
+    max_time = max([i["end"] for i in reqs]) * 30
+
+    MANAGER.setUp()
     ENV.process(generate(reqs))
     # Start processes
     ENV.run(until=max_time)
