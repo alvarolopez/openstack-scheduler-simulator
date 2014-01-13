@@ -15,8 +15,6 @@ from simulator import scheduler
 from simulator import utils
 
 ENV = simulator.ENV
-#JOB_STORE = simpy.Store(ENV, capacity=1000)
-JOB_STORE = None
 MANAGER = simulator.scheduler.manager
 CATALOG = simulator.catalog.CATALOG
 
@@ -33,7 +31,7 @@ class Request(object):
     tasks have finished.
     """
 
-    def __init__(self, req, instance_type_name, job_store=JOB_STORE):
+    def __init__(self, req, instance_type_name, job_store):
         self.req = req
 
         self.instance_type_name = instance_type_name
@@ -300,7 +298,7 @@ class Host(object):
         ENV.process(instance.shutdown())
 
     def launch_instance(self, instance_uuid,
-                        instance_ref, job_store=JOB_STORE):
+                        instance_ref, job_store):
         """Launch an instance if we can allocate it.
 
         We will raise a exception.NoValidHost if we cannot
@@ -344,7 +342,7 @@ def generate(reqs):
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
         job_store = simpy.Store(ENV, capacity=1000)
-        r = Request(req, "m1.small", job_store=job_store)
+        r = Request(req, "m1.small", job_store)
         ENV.process(r.do())
         yield ENV.timeout(0)
 
