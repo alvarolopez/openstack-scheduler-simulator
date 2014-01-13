@@ -9,9 +9,10 @@ import simpy
 
 from nova import exception
 
+import simulator
 from simulator import fakes
 
-ENV = simpy.Environment()
+ENV = simulator.ENV
 #JOB_STORE = simpy.Store(ENV, capacity=1000)
 JOB_STORE = None
 MANAGER = fakes.manager
@@ -21,8 +22,8 @@ MANAGER = fakes.manager
 #os.makedirs(OUTDIR)
 
 
-def print_(who, id, what, env=ENV):
-    time = env.now
+def print_(who, id, what):
+    time = ENV.now
     id = id[:15]
     print("%(time)2.1f %(who)10s %(id)15s %(what)s" %
           {"time": time, "who": who, "id": id, "what": what})
@@ -35,9 +36,9 @@ class Request(object):
     tasks have finished.
     """
 
-    def __init__(self, env, req, instance_type_name, job_store=JOB_STORE):
+    def __init__(self, req, instance_type_name, job_store=JOB_STORE):
         self.req = req
-        self.env = env
+
         self.instance_type_name = instance_type_name
         self.instance_type = fakes.flavors.get_flavor_by_name(
             instance_type_name)
@@ -52,17 +53,17 @@ class Request(object):
         # We wait until the request is made by the user. In SimPy2 it was done
         # by activating the process at a given time using the kwarg "at=", no
         # longer present
-        yield self.env.timeout(self.req["submit"] - self.env.now)
-        start = self.env.now
+        yield ENV.timeout(self.req["submit"] - ENV.now)
+        start = ENV.now
         print_("request", self.name, "start w/ %s tasks" % self.req["tasks"])
-        yield self.env.timeout(1)
+        yield ENV.timeout(1)
 
         # Prepare the jobs
         jid = self.req["id"]
         wall = self.req["end"] - self.req["start"]
         expected_elapsed = self.req["end"] - self.req["submit"]
         for i in xrange(self.req["tasks"]):
-            job = Job(self.env, "%s-%s" % (jid, i), wall)
+            job = Job("%s-%s" % (jid, i), wall)
             self.jobs.append(job)
             self.job_store.put(job)
 
@@ -85,7 +86,7 @@ class Request(object):
         for job in self.jobs:
             yield job.finished
 
-        end = self.env.now
+        end = ENV.now
         for instance_uuid in instance_uuids:
             pass
             MANAGER.terminate_instance(instance_uuid)
@@ -102,9 +103,9 @@ class Instance(object):
     It can run several jobs ( #jobs <= #cpus )
     """
 
-    def __init__(self, env, name, instance_type, job_store, node_resources):
+    def __init__(self, name, instance_type, job_store, node_resources):
         self.name = name
-        self.env = env
+
         self.job_store = job_store
         self.cpus = instance_type["cpus"]
         self.mem = instance_type["mem"]
@@ -114,13 +115,13 @@ class Instance(object):
 
         self.node_resources = node_resources
 
-        self.finished = self.env.event()
+        self.finished = ENV.event()
 
         # Boot the machine
-        self.process = self.env.process(self.boot())
+        self.process = ENV.process(self.boot())
 
         # Wait for 2 hours and shutdown
-#        self.env.process(self.shutdown(after=3600 * 24))
+#        ENV.process(self.shutdown(after=3600 * 24))
 
     def boot(self):
         """Simulate the boot process.
@@ -141,15 +142,15 @@ class Instance(object):
 
         # Spawn
         print_("instance", self.name, "starts w/ %s cpus" % self.cpus)
-        yield self.env.timeout(self.boot_time)
-        self.process = self.env.process(self.execute())
+        yield ENV.timeout(self.boot_time)
+        self.process = ENV.process(self.execute())
 
     def shutdown(self, after=0):
         """Simulate the shutdown.
 
         After shutting the instance down, free the allocated resources.
         """
-        yield self.env.timeout(after)
+        yield ENV.timeout(after)
         self.process.interrupt()
         print_("instance", self.name, "finishes")
 
@@ -175,7 +176,7 @@ class Instance(object):
             for job in xrange(self.cpus):
                 with self.job_store.get() as req:
                     try:
-                        result = yield req | self.env.timeout(1)
+                        result = yield req | ENV.timeout(1)
                     except simpy.Interrupt:
                         return
 
@@ -199,32 +200,32 @@ class Instance(object):
 
 class Job(object):
     """One Job executed inside an instance."""
-    def __init__(self, env, jid, wall):
+    def __init__(self, jid, wall):
         self.name = "j-%s" % jid
-        self.env = env
+
         self.wall = wall
-        self.finished = self.env.event()
+        self.finished = ENV.event()
 
     def start(self):
-        self.env.process(self.do())
+        ENV.process(self.do())
 
     def do(self):
         """Do the job."""
         print_("job", self.name, "starts (wall %s)" % self.wall)
         # Now consume the walltime
-        yield self.env.timeout(self.wall)
+        yield ENV.timeout(self.wall)
         print_("job", self.name, "ends (wall %s)" % self.wall)
         self.finished.succeed()
 
 
 class Catalog(object):
     """The catalog serves images to hosts."""
-    def __init__(self, env, name):
+    def __init__(self, name):
         self.name = name
-        self.env = env
+
         self.bw = 1.0  # Gbit
         self.chunk_size = 256.0
-        self.downloads = simpy.Container(env)
+        self.downloads = simpy.Container(ENV)
 
     def download(self, image):
         yield self.downloads.put(1)
@@ -239,7 +240,7 @@ class Catalog(object):
             bw = penalty * self.bw * 1024
             bw = bw / download_nr
             download_time = self.chunk_size / bw
-            yield self.env.timeout(download_time)
+            yield ENV.timeout(download_time)
             served += self.chunk_size
 
         yield self.downloads.get(1)
@@ -250,17 +251,17 @@ CATALOG = Catalog("catalog")
 
 class Host(object):
     """One node can run several instances."""
-    def __init__(self, env, name, cpus, mem, disk):
+    def __init__(self, name, cpus, mem, disk):
         self.name = name
         self.cpus = cpus
         self.mem = mem
         self.disk = disk
-        self.env = env
+
         self.instances = {}
         self.resources = {
-            "cpus": simpy.Container(self.env, self.cpus, init=self.cpus),
-            "mem": simpy.Container(self.env, self.mem, init=self.mem),
-            "disk": simpy.Container(self.env, self.disk, init=self.disk),
+            "cpus": simpy.Container(ENV, self.cpus, init=self.cpus),
+            "mem": simpy.Container(ENV, self.mem, init=self.mem),
+            "disk": simpy.Container(ENV, self.disk, init=self.disk),
         }
 
         self.disk_bw = 0.2
@@ -273,7 +274,7 @@ class Host(object):
 
         print_("host", self.name, "download of %s starts" % image_uuid)
         # Download the image from the catalog
-        yield self.env.process(CATALOG.download(image))
+        yield ENV.process(CATALOG.download(image))
         print_("host", self.name, "download of %s ends" % image_uuid)
         self.images[image_uuid]["status"] = "DOWNLOADED"
         self.images[image_uuid]["downloaded"].succeed()
@@ -282,14 +283,14 @@ class Host(object):
         """Copy the image so that we can use it."""
         variation = random.uniform(0.9, 1)
         copy_time = variation * image["size"] / self.disk_bw
-        yield self.env.timeout(copy_time)
+        yield ENV.timeout(copy_time)
 
     def _resize(self, image):
         """Resize the image to the actual size."""
         variation = random.uniform(0.9, 1)
         resize_time = variation * 0
         # FIXME(aloga): we need to model this too
-        yield self.env.timeout(resize_time)
+        yield ENV.timeout(resize_time)
 
     def _prepare_image(self, instance_ref):
         """Prepare the image before we spawn the instance.
@@ -302,22 +303,21 @@ class Host(object):
         image_uuid = image["uuid"]
         self.images.setdefault(image_uuid,
                                {"status": None,
-                                "downloaded": self.env.event()})
+                                "downloaded": ENV.event()})
         status = self.images[image_uuid]["status"]
         if status not in ("DOWNLOADED", "DOWNLOADING"):
             self.images[image_uuid]["status"] = "DOWNLOADING"
-            yield self.env.process(self._download(image))
+            yield ENV.process(self._download(image))
         elif status == "DOWNLOADING":
             yield self.images[image_uuid]["downloaded"]
-        yield self.env.process(self._duplicate(image))
-        yield self.env.process(self._resize(image))
+        yield ENV.process(self._duplicate(image))
+        yield ENV.process(self._resize(image))
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         """Actually create the image."""
-        yield self.env.process(self._prepare_image(instance_ref))
+        yield ENV.process(self._prepare_image(instance_ref))
         instance_type = instance_ref['instance_type']
-        instance = Instance(self.env,
-                            instance_uuid,
+        instance = Instance(instance_uuid,
                             instance_type,
                             job_store,
                             self.resources)
@@ -330,7 +330,7 @@ class Host(object):
         """Terminate the instance."""
         print_("host", self.name, "terminates %s" % instance_uuid)
         instance = self.instances.pop(instance_uuid)
-        self.env.process(instance.shutdown())
+        ENV.process(instance.shutdown())
 
     def launch_instance(self, instance_uuid,
                         instance_ref, job_store=JOB_STORE):
@@ -348,12 +348,12 @@ class Host(object):
                 print_("node", self.name, msg)
                 raise exception.NoValidHost(reason=msg)
 
-        self.env.process(self._create_instance(instance_uuid,
+        ENV.process(self._create_instance(instance_uuid,
                                                instance_ref,
                                                job_store))
 
 
-def generate(env, reqs):
+def generate(reqs):
     """Generate the needed objects for the simulation.
 
     This function will generate the request objects from the traces and
@@ -363,8 +363,7 @@ def generate(env, reqs):
     # FIME(aloga): really simplistic
     hosts = []
     for i in xrange(32):
-        hosts.append(Host(env,
-                          "node-%02d" % i,
+        hosts.append(Host("node-%02d" % i,
                           4,
                           32 * 1024,
                           200 * 1024 * 1024))
@@ -378,13 +377,13 @@ def generate(env, reqs):
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
         job_store = simpy.Store(ENV, capacity=1000)
-        r = Request(env, req, "m1.small", job_store=job_store)
-        env.process(r.do())
-        yield env.timeout(0)
+        r = Request(req, "m1.small", job_store=job_store)
+        ENV.process(r.do())
+        yield ENV.timeout(0)
 
 
-def start(reqs, max_time, env=ENV):
+def start(reqs, max_time):
     """Start the simulation until max_time."""
-    env.process(generate(env, reqs))
+    ENV.process(generate(reqs))
     # Start processes
-    env.run(until=max_time)
+    ENV.run(until=max_time)

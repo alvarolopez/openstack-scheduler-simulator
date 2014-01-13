@@ -1,5 +1,9 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+import simpy
+
+ENV = simpy.Environment()
+
 
 def load_requests(file):
     """Load requests from file."""
