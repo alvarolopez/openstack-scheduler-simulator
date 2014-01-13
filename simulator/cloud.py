@@ -354,7 +354,10 @@ def start():
     """Start the simulation until max_time."""
 
     reqs = utils.load_requests(CONF.simulator.trace_file)
-    max_time = max([i["end"] for i in reqs]) * 30
+    if CONF.simulator.max_simulation_time:
+        max_time = CONF.simulator.max_simulation_time
+    else:
+        max_time = max([i["end"] for i in reqs]) * 30
 
     MANAGER.setUp()
     ENV.process(generate(reqs))
