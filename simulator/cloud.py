@@ -245,6 +245,9 @@ class Catalog(object):
         yield self.downloads.get(1)
 
 
+CATALOG = Catalog("catalog")
+
+
 class Host(object):
     """One node can run several instances."""
     def __init__(self, env, name, cpus, mem, disk):
@@ -269,9 +272,8 @@ class Host(object):
         image_uuid = image["uuid"]
 
         print_("host", self.name, "download of %s starts" % image_uuid)
-        catalog = CONF["catalog"]
         # Download the image from the catalog
-        yield self.env.process(catalog.download(image))
+        yield self.env.process(CATALOG.download(image))
         print_("host", self.name, "download of %s ends" % image_uuid)
         self.images[image_uuid]["status"] = "DOWNLOADED"
         self.images[image_uuid]["downloaded"].succeed()
@@ -350,8 +352,6 @@ class Host(object):
                                                instance_ref,
                                                job_store))
 
-# FIXME
-CONF = {}
 
 def generate(env, reqs):
     """Generate the needed objects for the simulation.
@@ -359,8 +359,6 @@ def generate(env, reqs):
     This function will generate the request objects from the traces and
     the hosts where the instances will be spawned
     """
-
-    CONF["catalog"] = Catalog(env, "catalog")
 
     # FIME(aloga): really simplistic
     hosts = []

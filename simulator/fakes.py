@@ -3,6 +3,7 @@
 import uuid
 
 import fixtures
+from oslo.config import cfg
 
 from nova import context as nova_context
 from nova import exception
@@ -11,6 +12,8 @@ import nova.scheduler.manager
 from nova.scheduler import utils
 
 import simulator.cloud
+
+CONF = cfg.CONF
 
 
 def create_request_spec(flavor, image, instance_nr):
@@ -135,7 +138,7 @@ class SchedulerManager(fixtures.Fixture):
                            self._fake_run_instance)
 
         self.manager = nova.scheduler.manager.SchedulerManager(
-            scheduler_driver="nova.scheduler.chance.ChanceScheduler")
+            scheduler_driver=CONF.scheduler_driver)
 
     def _fake_handle_schedule_error(self, context, ex,
                                     instance_uuid, request_spec):
@@ -211,4 +214,3 @@ class SchedulerManager(fixtures.Fixture):
 
 
 manager = SchedulerManager()
-manager.setUp()
