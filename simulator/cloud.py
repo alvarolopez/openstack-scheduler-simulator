@@ -224,7 +224,8 @@ class Job(object):
         self.finished = ENV.event()
 
     def start(self):
-        ENV.process(self.do())
+        if self.wall !=0:
+            ENV.process(self.do())
 
     def do(self):
         """Do the job."""
@@ -409,28 +410,30 @@ def generate(reqs):
 
     # FIME(aloga): really simplistic
     hosts = []
-    for i in xrange(32):
+    for i in xrange(50):
         hosts.append(Host("node-%02d" % i,
-                          4,
+                          2,
                           32 * 1024,
                           200 * 1024 * 1024))
     MANAGER.add_hosts(hosts)
 
     for req in reqs:
-        if req["start"] < req["submit"]:
+        if req["start"] != 0 and req["start"] < req["submit"]:
             print "discarding req %s" % req["id"]
             continue
 
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
         job_store = simpy.Store(ENV, capacity=1000)
-        r = Request(req, "m1.small", job_store)
+        r = Request(req, "m1.tiny", job_store)
         ENV.process(r.do())
         yield ENV.timeout(0)
 
 
 def start():
     """Start the simulation until max_time."""
+
+    print CONF.simulator.trace_file
 
     reqs = utils.load_requests(CONF.simulator.trace_file)
     if CONF.simulator.max_simulation_time:
@@ -441,4 +444,7 @@ def start():
     MANAGER.setUp()
     ENV.process(generate(reqs))
     # Start processes
-    ENV.run(until=max_time)
+    if max_time != 0:
+        ENV.run(until=max_time)
+    else:
+        ENV.run()
