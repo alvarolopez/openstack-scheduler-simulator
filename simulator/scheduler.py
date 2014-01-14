@@ -214,7 +214,7 @@ class SchedulerManager(fixtures.Fixture):
                                               overwrite=False)
 
         return self.manager.run_instance(context=context,
-                                         request_spec=request_spec,
+                                         request_spec=request_spec.copy(),
                                          admin_password=None,
                                          injected_files=None,
                                          requested_networks=None,

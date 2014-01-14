@@ -74,6 +74,8 @@ class Request(object):
             self.image,
             instance_nr)
 
+        instance_uuids = req["instance_uuids"]
+
         MANAGER.run_instance(req, self.job_store)
 
         instance_uuids = req["instance_uuids"]
@@ -87,7 +89,6 @@ class Request(object):
 
         end = ENV.now
         for instance_uuid in instance_uuids:
-            pass
             MANAGER.terminate_instance(instance_uuid)
 
         msg = ("ends. expected wall %s, "
@@ -153,7 +154,11 @@ class Instance(object):
 
         # Spawn
         utils.print_("instance", self.name, "starts w/ %s vcpus" % self.vcpus)
-        yield ENV.timeout(self.boot_time)
+        print self.name, "boot", self.boot_time
+        try:
+            yield ENV.timeout(self.boot_time)
+        except simpy.Interrupt as e:
+            return
         self.process = ENV.process(self.execute())
 
     def shutdown(self, after=0):
@@ -296,7 +301,6 @@ class Host(dict):
         return d
 
     def __getitem__(self, k):
-#        print "->", k
         return self.get_host_info()[k]
 
     def __iter__(self):
@@ -433,12 +437,11 @@ def generate(reqs):
 def start():
     """Start the simulation until max_time."""
 
-    print CONF.simulator.trace_file
-
     reqs = utils.load_requests(CONF.simulator.trace_file)
-    if CONF.simulator.max_simulation_time:
+    if CONF.simulator.max_simulation_time is not None:
         max_time = CONF.simulator.max_simulation_time
     else:
+        # FIXME(aloga): this does not work when downloading images...
         max_time = max([i["end"] for i in reqs]) * 30
 
     MANAGER.setUp()
