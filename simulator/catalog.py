@@ -26,8 +26,8 @@ class Catalog(object):
         served = 0
         while served < size:
             download_nr = self.downloads.level
-            penalty = random.uniform(0.8, 0.9)
-            bw = penalty * self.bw * 1024
+            variation = random.uniform(0.8, 0.9)
+            bw = variation * self.bw * 1024
             bw = bw / download_nr
             download_time = self.chunk_size / bw
             yield ENV.timeout(download_time)
