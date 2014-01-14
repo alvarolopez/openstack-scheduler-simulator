@@ -1,5 +1,6 @@
 # vim: tabstop=4 shiftwidth=4 softtabstop=4
 
+import datetime
 import random
 import uuid
 
@@ -36,7 +37,7 @@ class Request(object):
             instance_type_name)
         # FIXME(aloga): this should be stored in the catalog
         self.image = {"uuid": uuid.uuid4().hex,
-                      "size": 10}
+                      "size": 5}
         self.name = "r-%(id)s" % req
         self.jobs = []
         self.job_store = job_store
@@ -72,6 +73,7 @@ class Request(object):
             self.instance_type_name,
             self.image,
             instance_nr)
+
         MANAGER.run_instance(req, self.job_store)
 
         instance_uuids = req["instance_uuids"]
@@ -233,7 +235,7 @@ class Job(object):
         self.finished.succeed()
 
 
-class Host(object):
+class Host(dict):
     """One node can run several instances."""
     def __init__(self, name, vcpus, memory_mb, disk):
         self.name = name
@@ -252,6 +254,52 @@ class Host(object):
         self.disk_bw = 0.2
 
         self.images = {}
+
+        self.created_at = datetime.datetime.utcnow()
+
+        self.service = {
+            'updated_at': self.updated_at,
+            'created_at': self.created_at,
+            'host': self.name,
+            'disabled': False
+        }
+
+        self.instance_uuids = []
+        self.disk_available_least = None
+
+    @property
+    def updated_at(self):
+        return datetime.datetime.utcnow()
+
+    def get_host_info(self):
+        d = {'free_disk_gb': self.resources["disk"].level,
+             'local_gb_used': self.resources["disk"].capacity - self.resources["disk"].level,
+             'local_gb': self.resources["disk"].capacity,
+             'free_ram_mb': self.resources["memory_mb"].level,
+             'memory_mb': self.resources['memory_mb'].capacity,
+             'vcpus': self.resources['vcpus'].capacity,
+             'vcpus_used': self.resources['vcpus'].capacity - self.resources['vcpus'].level,
+             'updated_at': self.updated_at,
+             'created_at': self.created_at,
+             'hypervisor_hostname': self.name,
+             'hypervisor_type': None,
+             'hypervisor_version': None,
+             'disk_available_least': None,
+             'host_ip': None,
+             'cpu_info': None,
+             'supported_instances': None,
+             'name': self.name,
+             'service': self.service,
+             'instance_uuids': self.instance_uuids,
+        }
+        return d
+
+    def __getitem__(self, k):
+#        print "->", k
+        return self.get_host_info()[k]
+
+    def __iter__(self):
+        return self.get_host_info().keys()
 
     def _download(self, image):
         """Download an image to disk."""
@@ -328,6 +376,7 @@ class Host(object):
         utils.print_("host", self.name, "terminates %s" % instance_uuid)
         instance = self.instances.pop(instance_uuid)
         ENV.process(instance.shutdown())
+        self.instance_uuids.remove(instance_uuid)
 
     def launch_instance(self, instance_uuid,
                         instance_ref, job_store):
@@ -348,6 +397,7 @@ class Host(object):
         ENV.process(self._create_instance(instance_uuid,
                                           instance_ref,
                                           job_store))
+        self.instance_uuids.append(instance_uuid)
 
 
 def generate(reqs):
