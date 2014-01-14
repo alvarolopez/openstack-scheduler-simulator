@@ -18,11 +18,20 @@ def load_requests(file):
             req = req.strip()
             if req.startswith("#"):
                 continue
-            req = req.split()
-            reqs.append({"id": req[0],
-                         "owner": req[1],
-                         "submit": float(req[2]),
-                         "start": float(req[3]),
-                         "end": float(req[4]),
-                         "tasks": int(req[5]), })
+            req = [i.strip() for i in req.split(",")]
+            try:
+                reqs.append({
+                    "id": req[0],
+                    "owner": req[1],
+                    "submit": int(req[2]),
+                    "start": int(req[3]) if req[3] else 0,
+                    "end": int(req[4]) if req[4] else 0,
+                    "tasks": int(req[5]),
+                    "image": req[6],
+                    "size": float(req[7]) if req[7] else 0.0,
+                    "flavor": req[8],
+                })
+            except IndexError:
+                print "discarding request %s" % req.join(",")
+
     return reqs

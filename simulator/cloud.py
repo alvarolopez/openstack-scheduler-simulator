@@ -2,7 +2,6 @@
 
 import datetime
 import random
-import uuid
 
 import simpy
 
@@ -29,15 +28,18 @@ class Request(object):
     tasks have finished.
     """
 
-    def __init__(self, req, instance_type_name, job_store):
+    def __init__(self, req, job_store):
         self.req = req
 
-        self.instance_type_name = instance_type_name
-        self.instance_type = simulator.scheduler.flavors.get_flavor_by_name(
-            instance_type_name)
+        self.flavor_name = req["flavor"] or CONF.simulator.default_flavor
+        self.flavor = simulator.scheduler.flavors.get_flavor_by_name(
+            self.flavor_name)
         # FIXME(aloga): this should be stored in the catalog
-        self.image = {"uuid": uuid.uuid4().hex,
-                      "size": 5}
+
+        self.image = {
+            "uuid": req["image"] or CONF.simulator.default_image,
+            "size": req["size"] or CONF.simulator.default_image_size,
+        }
         self.name = "r-%(id)s" % req
         self.jobs = []
         self.job_store = job_store
@@ -65,12 +67,12 @@ class Request(object):
         # Request instances
         # Calculate how much instances I actually need. Maybe check the
         # available flavors?
-        aux = divmod(self.req["tasks"], self.instance_type["vcpus"])
+        aux = divmod(self.req["tasks"], self.flavor["vcpus"])
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
         req = simulator.scheduler.create_request_spec(
-            self.instance_type_name,
+            self.flavor_name,
             self.image,
             instance_nr)
 
@@ -429,7 +431,7 @@ def generate(reqs):
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
         job_store = simpy.Store(ENV, capacity=1000)
-        r = Request(req, "m1.tiny", job_store)
+        r = Request(req, job_store)
         ENV.process(r.do())
         yield ENV.timeout(0)
 
