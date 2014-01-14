@@ -18,12 +18,20 @@ CONF = cfg.CONF
 
 def create_request_spec(flavor, image, instance_nr):
     """Create a request spec according"""
-    instances = []
-    for i in xrange(instance_nr):
-        instance = {"uuid": uuid.uuid4().hex}
-        instances.append(instance)
 
+    project = uuid.uuid4().hex
+
+    instances = []
     instance_type = flavors.get_flavor_by_name(flavor)
+
+    for i in xrange(instance_nr):
+        instance = {
+            "uuid": uuid.uuid4().hex,
+            "project_id": project, # FIXME(aloga): the project must come in the req
+            "os_type": None
+        }
+        instance.update(instance_type)
+        instances.append(instance)
 
     request_spec = nova.scheduler.utils.build_request_spec(None,  # Context
                                                            image,
@@ -34,16 +42,29 @@ def create_request_spec(flavor, image, instance_nr):
 
 class Flavors(object):
     INSTANCE_TYPES_MAP = {
-        1: "m1.small",
-        "m1.small": 1
+        1: "m1.tiny",
+        "m1.tiny": 1,
+        2: "m1.small",
+        "m1.small": 2,
     }
 
     INSTANCE_TYPES = {
-        "m1.small": {"cpus": 4,
-                     "mem": 4 * 1024,
-                     "disk": 20 * 1024 * 1024,
-                     "flavorid": 1,
-                     },
+        "m1.tiny": {
+            "flavorid": 1,
+            "vcpus": 2,
+            "memory_mb": 512,
+            "disk": 0,
+            "root_gb": 0,
+            "ephemeral_gb": 0,
+        },
+        "m1.small": {
+            "flavorid": 2,
+            "vcpus": 4,
+            "memory_mb": 4 * 1024,
+            "disk": 20 * 1024 * 1024,
+            "root_gb": 0,
+            "ephemeral_gb": 1,
+        },
     }
 
     def extract_flavor(self):
@@ -86,7 +107,7 @@ class FakeEventReporter(object):
 
 class FakeSchedulerBaseClass(nova.scheduler.driver.Scheduler):
     def hosts_up(self, context, topic):
-        return manager.get_hosts()
+        return [host.name for host in manager.get_hosts()]
 
 
 def blank_fn(name):
@@ -115,7 +136,7 @@ class SchedulerManager(fixtures.Fixture):
                            flavors)
 
         self._monkey_patch('nova.db.flavor_extra_specs_get',
-                           lambda *args: [])
+                           lambda *args: {})
 
         # SchedulerManager
         self._monkey_patch('nova.compute.utils.EventReporter',
@@ -133,6 +154,9 @@ class SchedulerManager(fixtures.Fixture):
 
         self._monkey_patch('nova.scheduler.driver.instance_update_db',
                            self._fake_db_instance_update)
+
+        self._monkey_patch('nova.db.compute_node_get_all',
+                           lambda *args: self.get_hosts())
 
         self._monkey_patch('nova.compute.rpcapi.ComputeAPI.run_instance',
                            self._fake_run_instance)
@@ -157,7 +181,7 @@ class SchedulerManager(fixtures.Fixture):
     def _fake_run_instance(self, *args, **kwargs):
         instance_ref = kwargs["request_spec"]
         instance_uuid = kwargs["instance"]
-        host = kwargs["host"]
+        host = self.hosts.get(kwargs["host"])
         job_store = self.instances[instance_uuid]["job_store"]
         self.instances[instance_uuid]["host"] = host.name
         self.change_status(instance_uuid, "BUILD")

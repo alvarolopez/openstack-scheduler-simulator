@@ -11,7 +11,7 @@ from nova import exception
 
 import simulator
 import simulator.catalog
-from simulator import scheduler
+import simulator.scheduler
 from simulator import utils
 
 CONF = cfg.CONF
@@ -64,7 +64,7 @@ class Request(object):
         # Request instances
         # Calculate how much instances I actually need. Maybe check the
         # available flavors?
-        aux = divmod(self.req["tasks"], self.instance_type["cpus"])
+        aux = divmod(self.req["tasks"], self.instance_type["vcpus"])
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
@@ -97,16 +97,17 @@ class Request(object):
 class Instance(object):
     """An instance.
 
-    It can run several jobs ( #jobs <= #cpus )
+    It can run several jobs ( #jobs <= #vcpus )
     """
 
     def __init__(self, name, instance_type, job_store, node_resources):
         self.name = name
 
         self.job_store = job_store
-        self.cpus = instance_type["cpus"]
-        self.mem = instance_type["mem"]
-        self.disk = instance_type["disk"]
+        self.vcpus = instance_type["vcpus"]
+        self.memory_mb = instance_type["memory_mb"]
+        self.root_gb = instance_type["root_gb"]
+        self.ephemeral_gb = instance_type["ephemeral_gb"]
 
         self.boot_time = round(random.uniform(10, 20))
 
@@ -128,17 +129,28 @@ class Instance(object):
         """
         # Consume the node_resources 1st. Do not check if they're available,
         # since check was made upstream
-        for resource in ("cpus", "mem", "disk"):
+        for resource in ("vcpus", "memory_mb", "root_gb", "ephemeral_gb"):
             amount = getattr(self, resource, 0)
             if amount == 0:
                 continue
-            self.node_resources[resource].get(amount)
+            if resource in ("root_gb", "ephemeral_gb"):
+                resource = "disk"
+
+            with self.node_resources[resource].get(amount) as request:
+                result = yield request | ENV.timeout(0)
+                if request not in result:
+                    # FIXME(aloga): we need to capture this
+                    raise exception.ComputeResourcesUnavailable()
+
             utils.print_("instance",
                          self.name,
-                         "consumes %s %s" % (amount, resource))
+                         "consumes %s (%s left) %s" %
+                            (amount,
+                             self.node_resources[resource].level,
+                             resource))
 
         # Spawn
-        utils.print_("instance", self.name, "starts w/ %s cpus" % self.cpus)
+        utils.print_("instance", self.name, "starts w/ %s vcpus" % self.vcpus)
         yield ENV.timeout(self.boot_time)
         self.process = ENV.process(self.execute())
 
@@ -152,10 +164,15 @@ class Instance(object):
         utils.print_("instance", self.name, "finishes")
 
         # Free the node_resources
-        for resource in ("cpus", "mem", "disk"):
+        # FIXME(DRY)
+        for resource in ("vcpus", "memory_mb", "root_gb", "ephemeral_gb"):
             amount = getattr(self, resource, 0)
             if amount == 0:
                 continue
+
+            if resource in ("root_gb", "ephemeral_gb"):
+                resource = "disk"
+
             self.node_resources[resource].put(amount)
             utils.print_("instance",
                          self.name,
@@ -171,8 +188,7 @@ class Instance(object):
             # Start executing jobs
             # If we want to execute jobs in blocs (instead of start consuming)
             # we can get the number of jobs to get with the following
-#            jobs_to_run = min(self.cpus, max(1, len(self.job_store.items)))
-            for job in xrange(self.cpus):
+            for job in xrange(self.vcpus):
                 with self.job_store.get() as req:
                     try:
                         result = yield req | ENV.timeout(1)
@@ -219,16 +235,17 @@ class Job(object):
 
 class Host(object):
     """One node can run several instances."""
-    def __init__(self, name, cpus, mem, disk):
+    def __init__(self, name, vcpus, memory_mb, disk):
         self.name = name
-        self.cpus = cpus
-        self.mem = mem
+        self.vcpus = vcpus
+        self.memory_mb = memory_mb
         self.disk = disk
+        self.total_disk = disk
 
         self.instances = {}
         self.resources = {
-            "cpus": simpy.Container(ENV, self.cpus, init=self.cpus),
-            "mem": simpy.Container(ENV, self.mem, init=self.mem),
+            "vcpus": simpy.Container(ENV, self.vcpus, init=self.vcpus),
+            "memory_mb": simpy.Container(ENV, self.memory_mb, init=self.memory_mb),
             "disk": simpy.Container(ENV, self.disk, init=self.disk),
         }
 
@@ -250,14 +267,14 @@ class Host(object):
     def _duplicate(self, image):
         """Copy the image so that we can use it."""
         variation = random.uniform(0.9, 1)
-        copy_time = variation * image["size"] / self.disk_bw
+        copy_time = image["size"] / (variation * self.disk_bw)
         yield ENV.timeout(copy_time)
 
-    def _resize(self, image):
+    def _resize(self, image, root, ephemeral):
         """Resize the image to the actual size."""
         variation = random.uniform(0.9, 1)
         resize_time = variation * 0
-        # FIXME(aloga): we need to model this too
+        # FIXME(aloga): we need to actually resize the filesystems
         yield ENV.timeout(resize_time)
 
     def _prepare_image(self, instance_ref):
@@ -269,17 +286,29 @@ class Host(object):
         """
         image = instance_ref["image"]
         image_uuid = image["uuid"]
+
+        # Check if the image is being downloaded, is downloaded or
+        # we need to download it.
         self.images.setdefault(image_uuid,
                                {"status": None,
                                 "downloaded": ENV.event()})
         status = self.images[image_uuid]["status"]
         if status not in ("DOWNLOADED", "DOWNLOADING"):
+            # We need to download it
             self.images[image_uuid]["status"] = "DOWNLOADING"
             yield ENV.process(self._download(image))
         elif status == "DOWNLOADING":
+            # It is beign downloaded, wait for it
             yield self.images[image_uuid]["downloaded"]
+
+        # Next, copy the image
         yield ENV.process(self._duplicate(image))
-        yield ENV.process(self._resize(image))
+        root = instance_ref["instance_properties"]["root_gb"]
+        ephemeral = instance_ref["instance_properties"]["ephemeral_gb"]
+
+        # Next, resize the image
+        yield ENV.process(self._resize(image, root, ephemeral))
+
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         """Actually create the image."""
@@ -308,7 +337,7 @@ class Host(object):
         allocate resource for the image. FIXME(aloga): we should raise
         nova.exception.ComputeResourcesUnavailable ?
         """
-        for i in ('cpus', 'mem', 'disk'):
+        for i in ('vcpus', 'memory_mb', 'disk'):
             res = instance_ref['instance_type'][i]
             if res > self.resources[i].level:
                 msg = ("cannot spawn instance ( %s > %s %s)" %
