@@ -1,0 +1,26 @@
+[simulator]
+
+#
+# Options defined in simulator.cloud
+#
+
+# Maximum simulation time. If not set, the simulation will run
+# until all the requests end. (integer value)
+#max_simulation_time=0
+
+# Path to traces to process. (string value)
+#trace_file=data/trace.dat
+
+# Default image UUID to use if trace file does not contain
+# one. (string value)
+#default_image=3dfbc7378f244698bba512649d35d877
+
+# Default image size (GB) to use if trace file does not
+# contain one. (floating point value)
+#default_image_size=2.0
+
+# Default flavor (instance type) to use if trace file does not
+# contain one. (string value)
+#default_flavor=m1.tiny
+
+
