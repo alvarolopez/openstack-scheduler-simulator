@@ -159,7 +159,7 @@ class Instance(object):
         print self.name, "boot", self.boot_time
         try:
             yield ENV.timeout(self.boot_time)
-        except simpy.Interrupt as e:
+        except simpy.Interrupt:
             return
         self.process = ENV.process(self.execute())
 
