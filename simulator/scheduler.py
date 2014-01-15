@@ -16,7 +16,7 @@ from simulator import utils
 CONF = cfg.CONF
 
 
-def create_request_spec(flavor, image, instance_nr):
+def create_request_spec(req_id, flavor, image, instance_nr):
     """Create a request spec according"""
 
     project = uuid.uuid4().hex
@@ -37,6 +37,7 @@ def create_request_spec(flavor, image, instance_nr):
                                                            image,
                                                            instances,
                                                            instance_type)
+    request_spec["id"] = req_id
     return request_spec
 
 
@@ -124,7 +125,8 @@ class SchedulerManager(fixtures.Fixture):
 
         self.manager = None
         self.hosts = {}
-        self.instances = {}
+        self.instances_states = {}
+        self.requests = {}
 
     def _monkey_patch(self, monkey, patch):
         self.useFixture(fixtures.MonkeyPatch(monkey, patch))
@@ -169,7 +171,7 @@ class SchedulerManager(fixtures.Fixture):
         if not isinstance(ex, exception.NoValidHost):
             msg = "Exception during schduler run: %s" % ex.message
         else:
-            self.instances[instance_uuid]["status"] = "ERROR"
+            self.instances_states[instance_uuid]["status"] = "ERROR"
             msg = ("setting instance %s to error (%s)" %
                    (instance_uuid, ex.message))
         utils.print_("scheduler", "", msg)
@@ -182,13 +184,14 @@ class SchedulerManager(fixtures.Fixture):
         instance_ref = kwargs["request_spec"]
         instance_uuid = kwargs["instance"]
         host = self.hosts.get(kwargs["host"])
-        job_store = self.instances[instance_uuid]["job_store"]
-        self.instances[instance_uuid]["host"] = host.name
+        job_store = self.instances_states[instance_uuid]["job_store"]
+        self.instances_states[instance_uuid]["host"] = host.name
         self.change_status(instance_uuid, "BUILD")
         host.launch_instance(instance_uuid, instance_ref, job_store)
 
-    def change_status(self, instance_uuid, status):
-        self.instances[instance_uuid]["status"] = status
+    def change_status(self, instance_uuid, status, instance=None):
+        self.instances_states[instance_uuid]["status"] = status
+        self.instances_states[instance_uuid]["instance"] = instance
 
     def add_hosts(self, hosts):
         for i in hosts:
@@ -197,15 +200,28 @@ class SchedulerManager(fixtures.Fixture):
     def get_hosts(self):
         return self.hosts.values()
 
+    def get_instances_from_req(self, req_id):
+        ret = []
+        for instance_uuid in self.requests.get(req_id):
+            instance = self.instances_states.get(instance_uuid)
+            ret.append(instance)
+        return ret
+
     def run_instance(self, request_spec, job_store):
         """Run an instance on a node"""
         utils.print_("scheduler", "", "got req %s" % request_spec)
 
         for instance_uuid in request_spec["instance_uuids"]:
-            self.instances[instance_uuid] = {"host": None,
-                                             "status": None,
-                                             "job_store": job_store}
+            self.instances_states[instance_uuid] = {
+                "host": None,
+                "status": None,
+                "job_store": job_store,
+                "request": request_spec["id"],
+                "instance": None
+            }
+
             self.change_status(instance_uuid, "SCHEDULE")
+        self.requests[request_spec["id"]] = request_spec["instance_uuids"]
 
         context = nova_context.RequestContext(user_id=None,
                                               project_id=None,
@@ -223,7 +239,7 @@ class SchedulerManager(fixtures.Fixture):
                                          legacy_bdm_in_spec=None)
 
     def terminate_instance(self, instance_uuid):
-        instance_state = self.instances.get(instance_uuid, None)
+        instance_state = self.instances_states.get(instance_uuid, None)
         if (instance_state and instance_state["status"] in ("ACTIVE",
                                                             "ERROR",
                                                             "BUILD")):
@@ -235,6 +251,12 @@ class SchedulerManager(fixtures.Fixture):
             utils.print_("scheduler",
                          "",
                          "unknown instance %s" % instance_uuid)
+
+
+    def get_instance_status(self, instance_uuid):
+        instance_state = self.instances_states.get(instance_uuid,
+                                                 {"status": "UNKNOWN"})
+        return instance_state["status"]
 
 
 manager = SchedulerManager()

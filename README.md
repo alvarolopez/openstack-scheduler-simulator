@@ -15,23 +15,33 @@ nova into it.
 You'll need a trace file to actually create the simulation. Create one with
 the following format:
 
-    id,user,submit,start,end,cores,image_id,image_size,flavor
+    id,user,submit,start,end,terminate,cores,image_id,image_size,flavor
 
 This file is read by defualt from `data/trace.dat`. Please note the following:
 
-- `submit`, `start` and `end` are seconds from the beginning of the
-  simulation. They do not need to start from 0 though.
-- `submit` is the time when the user submits the request.
+- `submit`, `start`, `end` and `terminate` are seconds.
+
+- `submit` is the time when the request will be submitted.
+
+- `terminate` indicates how many seconds will pass until the
+  instances are terminated and the request is cancelled. This is an
+  optional value and if it is not specified the images won't be
+  terminated.
+
 - `start` and `end` are optional values. They are used to simulate
   the execution of a job insided the allocated instances. Therefore
-  `submit` < `start` < `end`, otherwise the request will be discarded
+  `submit` < `start` < `end`, otherwise the request will be discarded.
+
 - `cores` is the number of cores that the user needs. The simulator
   will automatically request as many machines as needed to satisfy
   this demand.
+
 - `image_id` is the image id to be used. The option `default_image`
   will be used if this field is empty.
+
 - `image_size` is the size of the image to be used. The option
   `default_image_size` will be used if this field is empty.
+
 - `flavor` is the instance type (flavor) that will be used. The
   option `default_flavor` will be used if this field is empty.
 

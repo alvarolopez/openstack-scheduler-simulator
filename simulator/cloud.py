@@ -88,10 +88,11 @@ class Request(object):
         jid = self.req["id"]
         wall = self.req["end"] - self.req["start"]
         expected_elapsed = self.req["end"] - self.req["submit"]
-        for i in xrange(self.req["cores"]):
-            job = Job("%s-%s" % (jid, i), wall)
-            self.jobs.append(job)
-            self.job_store.put(job)
+        if wall > 0:
+            for i in xrange(self.req["cores"]):
+                job = Job("%s-%s" % (jid, i), wall)
+                self.jobs.append(job)
+                self.job_store.put(job)
 
         # Request instances
         # Calculate how much instances I actually need. Maybe check the
@@ -100,31 +101,71 @@ class Request(object):
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need
-        req = simulator.scheduler.create_request_spec(
+        req_spec = simulator.scheduler.create_request_spec(
+            self.req["id"],
             self.flavor_name,
             self.image,
             instance_nr)
 
-        instance_uuids = req["instance_uuids"]
+        instance_uuids = req_spec["instance_uuids"]
 
-        MANAGER.run_instance(req, self.job_store)
+        MANAGER.run_instance(req_spec, self.job_store)
 
-        instance_uuids = req["instance_uuids"]
+        instance_uuids = req_spec["instance_uuids"]
 
         utils.print_("request",
                      self.name,
                      "got instances: %s" % instance_uuids)
 
-        for job in self.jobs:
-            yield job.finished
+#        for job in self.jobs:
+#            yield job.finished
 
-        end = ENV.now
+
+        if self.req["terminate"]:
+            wait_until = self.req["terminate"]
+            timeout = ENV.timeout(wait_until)
+        else:
+            timeout = None
+
+        events = [j.finished for j in self.jobs]
+
+        # Wait until all jobs have finished or until the request is terminated
+        # or until simulator ends
+        if timeout and events:
+            what = yield timeout | ENV.all_of(events)
+        elif events:
+            what = yield ENV.all_of(events)
+        elif timeout:
+            what = yield timeout
+        else:
+            while True:
+                timeout = ENV.timeout(1)
+                what = yield timeout
+                statuses = []
+                for instance_uuid in instance_uuids:
+                    status = MANAGER.get_instance_status(instance_uuid)
+                    statuses.append(status)
+                if all([i == "ACTIVE" for i in statuses]):
+                    break
+
+            instances = MANAGER.get_instances_from_req(self.req["id"])
+            what = yield ENV.all_of([i["instance"].finished for i in instances])
+
+        if what and timeout in what:
+            # The request is terminated, do we have jobs waiting?
+            msg = "terminated before the jobs completed."
+        elif events:
+            # Jobs are terminated, wait until request is terminated
+            yield timeout
+            end = ENV.now
+            msg = ("terminated and jobs completed. expected wall %s, "
+                   "expected elapsed %s, "
+                   "elapsed %s" % (wall, expected_elapsed, end - start))
+        else:
+            msg = "terminated."
+
         for instance_uuid in instance_uuids:
             MANAGER.terminate_instance(instance_uuid)
-
-        msg = ("ends. expected wall %s, "
-               "expected elapsed %s, "
-               "elapsed %s" % (wall, expected_elapsed, end - start))
         utils.print_("request", self.name, msg)
 
 
@@ -185,7 +226,6 @@ class Instance(object):
 
         # Spawn
         utils.print_("instance", self.name, "starts w/ %s vcpus" % self.vcpus)
-        print self.name, "boot", self.boot_time
         try:
             yield ENV.timeout(self.boot_time)
         except simpy.Interrupt:
@@ -302,7 +342,11 @@ class Host(dict):
         }
 
         self.instance_uuids = []
+        self.instance_tasks = {}
         self.disk_available_least = None
+
+    def __str__(self):
+        return "Host %s" % self.name
 
     @property
     def updated_at(self):
@@ -368,6 +412,7 @@ class Host(dict):
         downloaded (if there's another download in progress). Then it will
         duplicate and resize the image.
         """
+        instance_uuid = instance_ref["instance_properties"]["uuid"]
         image = instance_ref["image"]
         image_uuid = image["uuid"]
 
@@ -380,39 +425,65 @@ class Host(dict):
         if status not in ("DOWNLOADED", "DOWNLOADING"):
             # We need to download it
             self.images[image_uuid]["status"] = "DOWNLOADING"
-            yield ENV.process(self._download(image))
+            self.instance_tasks[instance_uuid] = ENV.process(self._download(image))
+            try:
+                yield self.instance_tasks[instance_uuid]
+            except simpy.Interrupt:
+                self.images.pop(image_uuid, None)
+                raise
         elif status == "DOWNLOADING":
             # It is beign downloaded, wait for it
-            yield self.images[image_uuid]["downloaded"]
+            self.instance_tasks[instance_uuid] = self.images[image_uuid]["downloaded"]
+            yield self.instance_tasks[instance_uuid]
 
         # Next, copy the image
-        yield ENV.process(self._duplicate(image))
+        self.instance_tasks[instance_uuid] = ENV.process(self._duplicate(image))
+        yield self.instance_tasks[instance_uuid]
+
         root = instance_ref["instance_properties"]["root_gb"]
         ephemeral = instance_ref["instance_properties"]["ephemeral_gb"]
 
         # Next, resize the image
-        yield ENV.process(self._resize(image, root, ephemeral))
+        self.instance_tasks[instance_uuid] = ENV.process(self._resize(image, root, ephemeral))
+        yield self.instance_tasks[instance_uuid]
+
 
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         """Actually create the image."""
-        yield ENV.process(self._prepare_image(instance_ref))
+        self.instance_tasks[instance_uuid] = None
+        try:
+            yield ENV.process(self._prepare_image(instance_ref))
+        except simpy.Interrupt:
+            return
+
         instance_type = instance_ref['instance_type']
         instance = Instance(instance_uuid,
                             instance_type,
                             job_store,
                             self.resources)
+
+        self.instance_uuids.append(instance_uuid)
         self.instances[instance_uuid] = instance
 
-        MANAGER.change_status(instance_uuid, "ACTIVE")
+        # FIXME: this does not work. not safe
+        MANAGER.change_status(instance_uuid, "ACTIVE", instance=instance)
         utils.print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
         """Terminate the instance."""
         utils.print_("host", self.name, "terminates %s" % instance_uuid)
-        instance = self.instances.pop(instance_uuid)
-        ENV.process(instance.shutdown())
-        self.instance_uuids.remove(instance_uuid)
+        # FIXME: This fails if we are downloading the image and the image
+        # is not running yet
+        try:
+            instance = self.instances.pop(instance_uuid)
+        except KeyError:
+            # Instance not running, cancel the task
+            if self.instance_tasks[instance_uuid]:
+                self.instance_tasks[instance_uuid].interrupt()
+        else:
+            ENV.process(instance.shutdown())
+            self.instance_uuids.remove(instance_uuid)
 
     def launch_instance(self, instance_uuid,
                         instance_ref, job_store):
@@ -430,10 +501,12 @@ class Host(dict):
                 utils.print_("node", self.name, msg)
                 raise exception.NoValidHost(reason=msg)
 
-        ENV.process(self._create_instance(instance_uuid,
-                                          instance_ref,
-                                          job_store))
-        self.instance_uuids.append(instance_uuid)
+        try:
+            ENV.process(self._create_instance(instance_uuid,
+                                              instance_ref,
+                                              job_store))
+        except simpy.Interrupt:
+            pass
 
 
 def generate(reqs):
