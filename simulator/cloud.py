@@ -53,8 +53,8 @@ CATALOG = simulator.catalog.CATALOG
 class Request(object):
     """A request that is scheduled at a given time.
 
-    It creates some tasks, then requests some instances and waits until the
-    tasks have finished.
+    A request will try to get as many instances as needed to satisfy the
+    cores needed by the user, then wait until the job has finished.
     """
 
     def __init__(self, req, job_store):
@@ -81,14 +81,14 @@ class Request(object):
         start = ENV.now
         utils.print_("request",
                      self.name,
-                     "start w/ %s tasks" % self.req["tasks"])
+                     "start w/ %s cores" % self.req["cores"])
         yield ENV.timeout(1)
 
         # Prepare the jobs
         jid = self.req["id"]
         wall = self.req["end"] - self.req["start"]
         expected_elapsed = self.req["end"] - self.req["submit"]
-        for i in xrange(self.req["tasks"]):
+        for i in xrange(self.req["cores"]):
             job = Job("%s-%s" % (jid, i), wall)
             self.jobs.append(job)
             self.job_store.put(job)
@@ -96,7 +96,7 @@ class Request(object):
         # Request instances
         # Calculate how much instances I actually need. Maybe check the
         # available flavors?
-        aux = divmod(self.req["tasks"], self.flavor["vcpus"])
+        aux = divmod(self.req["cores"], self.flavor["vcpus"])
         instance_nr = (aux[0] + 1) if aux[1] else aux[0]
 
         # Request the instance_nr that we need

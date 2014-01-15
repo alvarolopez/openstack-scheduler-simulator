@@ -12,26 +12,38 @@ def print_(who, id, what):
 
 def load_requests(file):
     """Load requests from file."""
+
+    fields = {
+        "id": (0, int),
+        "ownwer": (1, str),
+        "submit": (2, int),
+        "start": (3, int),
+        "end": (4, int),
+        "terminate": (5, int),
+        "cores": (6, int),
+        "image": (7, str),
+        "size": (8, float),
+        "flavor": (9, str),
+
+    }
+
     reqs = []
     with open(file) as f:
-        for req in f.readlines():
-            req = req.strip()
-            if req.startswith("#"):
+        for line in f.readlines():
+            line = line.strip()
+            if line.startswith("#"):
                 continue
-            req = [i.strip() for i in req.split(",")]
-            try:
-                reqs.append({
-                    "id": req[0],
-                    "owner": req[1],
-                    "submit": int(req[2]),
-                    "start": int(req[3]) if req[3] else 0,
-                    "end": int(req[4]) if req[4] else 0,
-                    "tasks": int(req[5]),
-                    "image": req[6],
-                    "size": float(req[7]) if req[7] else 0.0,
-                    "flavor": req[8],
-                })
-            except IndexError:
-                print "discarding request %s" % req.join(",")
+
+            line = [i.strip() for i in line.split(",")]
+
+            if len(line) != len(fields):
+                print "discarding request %s" % ",".join(line)
+                continue
+
+            req = {}
+
+            for field, (position, trans) in fields.iteritems():
+                req[field] = trans(line[position])
+            reqs.append(req)
 
     return reqs
