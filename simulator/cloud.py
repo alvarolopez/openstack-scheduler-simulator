@@ -2,6 +2,8 @@
 
 import datetime
 import random
+import os
+import os.path
 
 import simpy
 
@@ -40,6 +42,10 @@ opts = [
                default="m1.tiny",
                help=('Default flavor (instance type) to use if trace '
                      'file does not contain one.')),
+    cfg.StrOpt('output_dir',
+               metavar='DIR',
+               default='outputs',
+               help='Where to store simulation output files'),
     ]
 
 CONF = cfg.CONF
@@ -468,6 +474,7 @@ class Host(dict):
 
         # FIXME: this does not work. not safe
         MANAGER.change_status(instance_uuid, "ACTIVE", instance=instance)
+        utils.write_start(instance_uuid)
         utils.print_("node", self.name, "spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
@@ -540,6 +547,9 @@ def generate(reqs):
 
 def start():
     """Start the simulation until max_time."""
+
+    if not os.path.exists(CONF.simulator.output_dir):
+        os.mkdir(CONF.simulator.output_dir)
 
     reqs = utils.load_requests(CONF.simulator.trace_file)
     if CONF.simulator.max_simulation_time is not None:

@@ -1,8 +1,32 @@
+import datetime
+import os.path
 import sys
+
+from oslo.config import cfg
 
 import simulator
 
+CONF = cfg.CONF
+
 ENV = simulator.ENV
+
+OUTPUT_PREFIX = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
+OUTPUT_PREFIX += "_"
+
+def write_to_file(outfile, output):
+    """Write to an output file."""
+    outfile = os.path.join(CONF.simulator.output_dir,
+                           OUTPUT_PREFIX + outfile)
+
+    with open(outfile, "a") as f:
+        f.write(output)
+
+
+def write_start(uuid):
+    now = ENV.now
+    output = "%(req_id)s\t%(start)s\n" % {"req_id": uuid,
+                                        "start": now}
+    write_to_file("start", output)
 
 
 def print_(who, id, what):
