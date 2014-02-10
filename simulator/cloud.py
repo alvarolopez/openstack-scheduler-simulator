@@ -400,14 +400,22 @@ class Host(dict):
 
     def _duplicate(self, image):
         """Copy the image so that we can use it."""
-        variation = random.uniform(0.9, 1)
-        copy_time = image["size"] / (variation * self.disk_bw)
+        if CONF.use_cow_images:
+            # FIXME(aloga): model this
+            copy_time = 1
+        else:
+            variation = random.uniform(0.9, 1)
+            copy_time = image["size"] / (variation * self.disk_bw)
+
         yield ENV.timeout(copy_time)
 
     def _resize(self, image, root, ephemeral):
         """Resize the image to the actual size."""
-        variation = random.uniform(0.9, 1)
-        resize_time = variation * 0
+        if CONF.use_cow_images:
+            resize_time = 1
+        else:
+            variation = random.uniform(0.9, 1)
+            resize_time = variation * 0
         # FIXME(aloga): we need to actually resize the filesystems
         yield ENV.timeout(resize_time)
 
