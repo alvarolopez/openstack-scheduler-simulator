@@ -5,13 +5,15 @@ from oslo.config import cfg
 from nova import config
 from nova import service
 
-import simulator
-from simulator import cloud
+#import simulator
+import simulator.log as logging
+
+config.parse_args(sys.argv)
+logging.setup()
 
 
 def main():
-    config.parse_args(sys.argv)
-
+    from simulator import cloud
     cloud.start()
 
 

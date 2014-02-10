@@ -29,13 +29,6 @@ def write_start(uuid):
     write_to_file("start", output)
 
 
-def print_(who, id, what):
-    time = ENV.now
-    id = id[:15]
-    print("%(time)2.1f %(who)10s %(id)15s %(what)s" %
-          {"time": time, "who": who, "id": id, "what": what})
-
-
 def load_requests(file):
     """Load requests from file."""
 

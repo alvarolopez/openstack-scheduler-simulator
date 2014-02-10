@@ -13,6 +13,7 @@ from nova import exception
 
 import simulator
 import simulator.catalog
+import simulator.log as logging
 import simulator.scheduler
 from simulator import utils
 
@@ -51,6 +52,8 @@ opts = [
 CONF = cfg.CONF
 CONF.register_opts(opts, group='simulator')
 
+LOG = logging.getLogger(__name__)
+
 ENV = simulator.ENV
 MANAGER = simulator.scheduler.manager
 CATALOG = simulator.catalog.CATALOG
@@ -79,15 +82,15 @@ class Request(object):
         self.jobs = []
         self.job_store = job_store
 
+        self.LOG = logging.getLogger("simulator.requests", {"id": self.name})
+
     def do(self):
         # We wait until the request is made by the user. In SimPy2 it was done
         # by activating the process at a given time using the kwarg "at=", no
         # longer present
         yield ENV.timeout(self.req["submit"] - ENV.now)
         start = ENV.now
-        utils.print_("request",
-                     self.name,
-                     "start w/ %s cores" % self.req["cores"])
+        self.LOG.info("start w/ %s cores", self.req["cores"])
         yield ENV.timeout(1)
 
         # Prepare the jobs
@@ -119,9 +122,7 @@ class Request(object):
 
         instance_uuids = req_spec["instance_uuids"]
 
-        utils.print_("request",
-                     self.name,
-                     "got instances: %s" % instance_uuids)
+        self.LOG.debug("%s got instances: %s" % (self.name, instance_uuids))
 
 #        for job in self.jobs:
 #            yield job.finished
@@ -172,7 +173,7 @@ class Request(object):
 
         for instance_uuid in instance_uuids:
             MANAGER.terminate_instance(instance_uuid)
-        utils.print_("request", self.name, msg)
+        self.LOG.info(msg)
 
 
 class Instance(object):
@@ -201,6 +202,7 @@ class Instance(object):
 
         # Wait for 2 hours and shutdown
 #        ENV.process(self.shutdown(after=3600 * 24))
+        self.LOG = logging.getLogger("simulator.instances", {"id": self.name})
 
     def boot(self):
         """Simulate the boot process.
@@ -222,16 +224,13 @@ class Instance(object):
                 if request not in result:
                     # FIXME(aloga): we need to capture this
                     raise exception.ComputeResourcesUnavailable()
-
-            utils.print_("instance",
-                         self.name,
-                         "consumes %s (%s left) %s" %
-                            (amount,
-                             self.node_resources[resource].level,
-                             resource))
+            self.LOG.debug("consumes %s (%s left) %s" %
+                                (amount,
+                                 self.node_resources[resource].level,
+                                 resource))
 
         # Spawn
-        utils.print_("instance", self.name, "starts w/ %s vcpus" % self.vcpus)
+        self.LOG.warning("starts w/ %s vcpus" % self.vcpus)
         try:
             yield ENV.timeout(self.boot_time)
         except simpy.Interrupt:
@@ -245,7 +244,7 @@ class Instance(object):
         """
         yield ENV.timeout(after)
         self.process.interrupt()
-        utils.print_("instance", self.name, "finishes")
+        self.LOG.info("finishes")
 
         # Free the node_resources
         # FIXME(DRY)
@@ -258,9 +257,7 @@ class Instance(object):
                 resource = "disk"
 
             self.node_resources[resource].put(amount)
-            utils.print_("instance",
-                         self.name,
-                         "frees %s %s" % (amount, resource))
+            self.LOG.debug("frees %s %s" % (amount, resource))
 
         self.finished.succeed()
 
@@ -305,16 +302,18 @@ class Job(object):
         self.wall = wall
         self.finished = ENV.event()
 
+        self.LOG = logging.getLogger("simulator.job", {"id": self.name})
+
     def start(self):
         if self.wall !=0:
             ENV.process(self.do())
 
     def do(self):
         """Do the job."""
-        utils.print_("job", self.name, "starts (wall %s)" % self.wall)
+        self.LOG.info("starts (wall %s)" % self.wall)
         # Now consume the walltime
         yield ENV.timeout(self.wall)
-        utils.print_("job", self.name, "ends (wall %s)" % self.wall)
+        self.LOG.info("ends (wall %s)" % self.wall)
         self.finished.succeed()
 
 
@@ -350,6 +349,8 @@ class Host(dict):
         self.instance_uuids = []
         self.instance_tasks = {}
         self.disk_available_least = None
+
+        self.LOG = logging.getLogger("simulator.hosts", {"id": self.name})
 
     def __str__(self):
         return "Host %s" % self.name
@@ -391,10 +392,10 @@ class Host(dict):
         """Download an image to disk."""
         image_uuid = image["uuid"]
 
-        utils.print_("host", self.name, "download of %s starts" % image_uuid)
+        self.LOG.debug("download of %s starts" % image_uuid)
         # Download the image from the catalog
         yield ENV.process(CATALOG.download(image))
-        utils.print_("host", self.name, "download of %s ends" % image_uuid)
+        self.LOG.debug("download of %s ends" % image_uuid)
         self.images[image_uuid]["status"] = "DOWNLOADED"
         self.images[image_uuid]["downloaded"].succeed()
 
@@ -483,11 +484,11 @@ class Host(dict):
         # FIXME: this does not work. not safe
         MANAGER.change_status(instance_uuid, "ACTIVE", instance=instance)
         utils.write_start(instance_uuid)
-        utils.print_("node", self.name, "spawns instance %s" % instance.name)
+        self.LOG.info("spawns instance %s" % instance.name)
 
     def terminate_instance(self, instance_uuid):
         """Terminate the instance."""
-        utils.print_("host", self.name, "terminates %s" % instance_uuid)
+        self.LOG.info("terminates %s" % instance_uuid)
         # FIXME: This fails if we are downloading the image and the image
         # is not running yet
         try:
@@ -513,7 +514,7 @@ class Host(dict):
             if res > self.resources[i].level:
                 msg = ("cannot spawn instance ( %s > %s %s)" %
                        (res, self.resources[i].level, i))
-                utils.print_("node", self.name, msg)
+                self.LOG.error(msg)
                 raise exception.NoValidHost(reason=msg)
 
         try:

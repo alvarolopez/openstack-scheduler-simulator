@@ -3,9 +3,11 @@ import random
 import simpy
 
 import simulator
-from simulator import utils
+from simulator import log as logging
 
 ENV = simulator.ENV
+
+LOG = logging.getLogger(__name__)
 
 
 class Catalog(object):
@@ -20,7 +22,7 @@ class Catalog(object):
     def download(self, image):
         yield self.downloads.put(1)
 
-        utils.print_("catalog", "", "serving %(uuid)s, %(size)fG" % image)
+        LOG.info("serving %(uuid)s, %(size)fG" % image)
 
         size = image["size"] * 8 * 1024
         served = 0
