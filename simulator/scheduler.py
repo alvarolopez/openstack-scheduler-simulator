@@ -11,10 +11,11 @@ import nova.scheduler.driver
 import nova.scheduler.manager
 import nova.scheduler.utils
 
-from simulator import utils
+from simulator import log as logging
 
 CONF = cfg.CONF
 
+LOG = logging.getLogger(__name__)
 
 def create_request_spec(req_id, flavor, image, instance_nr):
     """Create a request spec according"""
@@ -174,7 +175,7 @@ class SchedulerManager(fixtures.Fixture):
             self.instances_states[instance_uuid]["status"] = "ERROR"
             msg = ("setting instance %s to error (%s)" %
                    (instance_uuid, ex.message))
-        utils.print_("scheduler", "", msg)
+        LOG.error(msg)
 
     def _fake_db_instance_update(self, context,
                                  instance_uuid, extra_values=None):
@@ -209,7 +210,7 @@ class SchedulerManager(fixtures.Fixture):
 
     def run_instance(self, request_spec, job_store):
         """Run an instance on a node"""
-        utils.print_("scheduler", "", "got req %s" % request_spec)
+        LOG.debug("got req %s" % request_spec)
 
         for instance_uuid in request_spec["instance_uuids"]:
             self.instances_states[instance_uuid] = {
@@ -248,9 +249,7 @@ class SchedulerManager(fixtures.Fixture):
                 self.hosts[host].terminate_instance(instance_uuid)
             self.change_status(instance_uuid, "DELETED")
         else:
-            utils.print_("scheduler",
-                         "",
-                         "unknown instance %s" % instance_uuid)
+            LOG.error("unknown instance %s" % instance_uuid)
 
 
     def get_instance_status(self, instance_uuid):
