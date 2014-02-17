@@ -24,8 +24,6 @@ CONF.register_opts(opts, group='simulator')
 
 
 class SimulatorFormatter(logging.Formatter):
-#    def converter(self, t):
-#        return datetime.datetime(2000,1,2,3,4,5,678).timetuple()
 
     def format(self, record):
         record.created = ENV.now
@@ -34,20 +32,6 @@ class SimulatorFormatter(logging.Formatter):
         self._fmt = ('%(created)2.1f %(name)20s [%(id)s] '
                      '%(message)s')
         return logging.Formatter.format(self, record)
-
-
-#class ColorHandler(logging.StreamHandler):
-#    LEVEL_COLORS = {
-#        logging.DEBUG: '\033[00;32m',  # GREEN
-#        logging.INFO: '\033[00;36m',  # CYAN
-#        logging.WARN: '\033[01;33m',  # BOLD YELLOW
-#        logging.ERROR: '\033[01;31m',  # BOLD RED
-#        logging.CRITICAL: '\033[01;31m',  # BOLD RED
-#    }
-#
-#    def format(self, record):
-#        record.color = self.LEVEL_COLORS[record.levelno]
-#        return logging.StreamHandler.format(self, record)
 
 
 class SimulatorAdapter(logging.LoggerAdapter):
@@ -69,7 +53,6 @@ _loggers = {}
 
 def getLogger(name='unknown', extra={}):
     if name not in _loggers:
-#        _loggers[name] = logging.getLogger(name)
         _loggers[name] = SimulatorAdapter(logging.getLogger(name), extra)
 
     # This handles the logging level for each of the

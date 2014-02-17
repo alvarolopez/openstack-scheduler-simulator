@@ -12,7 +12,7 @@ import simulator.hosts
 import simulator.log as logging
 import simulator.requests
 import simulator.scheduler
-from simulator import utils
+import simulator.utils
 
 opts = [
     cfg.IntOpt('max_simulation_time',
@@ -90,7 +90,7 @@ def start():
     if not os.path.exists(CONF.simulator.output_dir):
         os.mkdir(CONF.simulator.output_dir)
 
-    reqs = utils.load_requests(CONF.simulator.trace_file)
+    reqs = simulator.utils.load_requests(CONF.simulator.trace_file)
     if CONF.simulator.max_simulation_time is not None:
         max_time = CONF.simulator.max_simulation_time
     else:

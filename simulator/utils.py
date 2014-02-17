@@ -29,7 +29,7 @@ def write_start(uuid):
     write_to_file("start", output)
 
 
-def load_requests(file):
+def load_requests(filename):
     """Load requests from file."""
 
     fields = {
@@ -47,7 +47,7 @@ def load_requests(file):
     }
 
     reqs = []
-    with open(file) as f:
+    with open(filename) as f:
         for line in f.readlines():
             line = line.strip()
             if line.startswith("#"):

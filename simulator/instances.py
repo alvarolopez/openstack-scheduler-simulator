@@ -33,8 +33,6 @@ class Instance(object):
         # Boot the machine
         self.process = ENV.process(self.boot())
 
-        # Wait for 2 hours and shutdown
-#        ENV.process(self.shutdown(after=3600 * 24))
         self.LOG = logging.getLogger(__name__, {"id": self.name})
 
     def boot(self):
