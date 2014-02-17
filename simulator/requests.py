@@ -16,7 +16,6 @@ class Request(object):
     A request will try to get as many instances as needed to satisfy the
     cores needed by the user, then wait until the job has finished.
     """
-
     def __init__(self, req, job_store):
         self.req = req
 
@@ -74,10 +73,6 @@ class Request(object):
         instance_uuids = req_spec["instance_uuids"]
 
         self.LOG.debug("%s got instances: %s" % (self.name, instance_uuids))
-
-#        for job in self.jobs:
-#            yield job.finished
-
 
         if self.req["terminate"]:
             wait_until = self.req["terminate"]
