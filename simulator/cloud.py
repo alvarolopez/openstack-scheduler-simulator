@@ -13,6 +13,7 @@ from nova import exception
 
 import simulator
 import simulator.catalog
+from simulator import jobs
 import simulator.log as logging
 import simulator.scheduler
 from simulator import utils
@@ -99,7 +100,7 @@ class Request(object):
         expected_elapsed = self.req["end"] - self.req["submit"]
         if wall > 0:
             for i in xrange(self.req["cores"]):
-                job = Job("%s-%s" % (jid, i), wall)
+                job = jobs.SimpleJob("%s-%s" % (jid, i), wall)
                 self.jobs.append(job)
                 self.job_store.put(job)
 
@@ -294,27 +295,6 @@ class Instance(object):
                     return
 
 
-class Job(object):
-    """One Job executed inside an instance."""
-    def __init__(self, jid, wall):
-        self.name = "j-%s" % jid
-
-        self.wall = wall
-        self.finished = ENV.event()
-
-        self.LOG = logging.getLogger("simulator.job", {"id": self.name})
-
-    def start(self):
-        if self.wall !=0:
-            ENV.process(self.do())
-
-    def do(self):
-        """Do the job."""
-        self.LOG.info("starts (wall %s)" % self.wall)
-        # Now consume the walltime
-        yield ENV.timeout(self.wall)
-        self.LOG.info("ends (wall %s)" % self.wall)
-        self.finished.succeed()
 
 
 class Host(dict):
