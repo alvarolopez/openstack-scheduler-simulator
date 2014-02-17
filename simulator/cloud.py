@@ -9,11 +9,11 @@ import simpy
 
 from oslo.config import cfg
 
-from nova import exception
+import nova.exception
 
 import simulator
 import simulator.catalog
-from simulator import jobs
+import simulator.jobs
 import simulator.log as logging
 import simulator.scheduler
 from simulator import utils
@@ -100,7 +100,7 @@ class Request(object):
         expected_elapsed = self.req["end"] - self.req["submit"]
         if wall > 0:
             for i in xrange(self.req["cores"]):
-                job = jobs.SimpleJob("%s-%s" % (jid, i), wall)
+                job = simulator.jobs.SimpleJob("%s-%s" % (jid, i), wall)
                 self.jobs.append(job)
                 self.job_store.put(job)
 
@@ -224,7 +224,7 @@ class Instance(object):
                 result = yield request | ENV.timeout(0)
                 if request not in result:
                     # FIXME(aloga): we need to capture this
-                    raise exception.ComputeResourcesUnavailable()
+                    raise nova.exception.ComputeResourcesUnavailable()
             self.LOG.debug("consumes %s (%s left) %s" %
                                 (amount,
                                  self.node_resources[resource].level,
@@ -495,7 +495,7 @@ class Host(dict):
                 msg = ("cannot spawn instance ( %s > %s %s)" %
                        (res, self.resources[i].level, i))
                 self.LOG.error(msg)
-                raise exception.NoValidHost(reason=msg)
+                raise nova.exception.NoValidHost(reason=msg)
 
         try:
             ENV.process(self._create_instance(instance_uuid,
