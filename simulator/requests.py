@@ -1,6 +1,7 @@
 from oslo.config import cfg
 
 import simulator
+import simulator.jobs
 import simulator.scheduler
 from simulator import log as logging
 
