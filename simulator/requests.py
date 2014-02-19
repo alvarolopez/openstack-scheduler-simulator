@@ -102,7 +102,8 @@ class Request(object):
                     break
 
             instances = MANAGER.get_instances_from_req(self.req["id"])
-            what = yield ENV.all_of([i["instance"].finished for i in instances])
+            what = yield ENV.all_of([i["instance"].finished
+                                     for i in instances])
 
         if what and timeout in what:
             # The request is terminated, do we have jobs waiting?
@@ -120,4 +121,3 @@ class Request(object):
         for instance_uuid in instance_uuids:
             MANAGER.terminate_instance(instance_uuid)
         self.LOG.info(msg)
-

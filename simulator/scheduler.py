@@ -17,6 +17,7 @@ CONF = cfg.CONF
 
 LOG = logging.getLogger(__name__)
 
+
 def create_request_spec(req_id, flavor, image, instance_nr):
     """Create a request spec according"""
 
@@ -28,7 +29,8 @@ def create_request_spec(req_id, flavor, image, instance_nr):
     for i in xrange(instance_nr):
         instance = {
             "uuid": uuid.uuid4().hex,
-            "project_id": project, # FIXME(aloga): the project must come in the req
+            # FIXME(aloga): the project must come in the req
+            "project_id": project,
             "os_type": None
         }
         instance.update(instance_type)
@@ -251,11 +253,10 @@ class SchedulerManager(fixtures.Fixture):
         else:
             LOG.error("unknown instance %s" % instance_uuid)
 
-
     def get_instance_status(self, instance_uuid):
-        instance_state = self.instances_states.get(instance_uuid,
-                                                 {"status": "UNKNOWN"})
-        return instance_state["status"]
+        state = self.instances_states.get(instance_uuid,
+                                          {"status": "UNKNOWN"})
+        return state["status"]
 
 
 manager = SchedulerManager()

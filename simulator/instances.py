@@ -56,9 +56,9 @@ class Instance(object):
                     # FIXME(aloga): we need to capture this
                     raise nova.exception.ComputeResourcesUnavailable()
             self.LOG.debug("consumes %s (%s left) %s" %
-                                (amount,
-                                 self.node_resources[resource].level,
-                                 resource))
+                           (amount,
+                            self.node_resources[resource].level,
+                            resource))
 
         # Spawn
         self.LOG.warning("starts w/ %s vcpus" % self.vcpus)
@@ -123,4 +123,3 @@ class Instance(object):
                     yield job.finished
                 except simpy.Interrupt:
                     return
-

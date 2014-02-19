@@ -32,7 +32,8 @@ class Host(dict):
         self.instances = {}
         self.resources = {
             "vcpus": simpy.Container(ENV, self.vcpus, init=self.vcpus),
-            "memory_mb": simpy.Container(ENV, self.memory_mb, init=self.memory_mb),
+            "memory_mb": simpy.Container(ENV, self.memory_mb,
+                                         init=self.memory_mb),
             "disk": simpy.Container(ENV, self.disk, init=self.disk),
         }
 
@@ -64,12 +65,14 @@ class Host(dict):
 
     def get_host_info(self):
         d = {'free_disk_gb': self.resources["disk"].level,
-             'local_gb_used': self.resources["disk"].capacity - self.resources["disk"].level,
+             'local_gb_used': (self.resources["disk"].capacity -
+                               self.resources["disk"].level),
              'local_gb': self.resources["disk"].capacity,
              'free_ram_mb': self.resources["memory_mb"].level,
              'memory_mb': self.resources['memory_mb'].capacity,
              'vcpus': self.resources['vcpus'].capacity,
-             'vcpus_used': self.resources['vcpus'].capacity - self.resources['vcpus'].level,
+             'vcpus_used': (self.resources['vcpus'].capacity -
+                            self.resources['vcpus'].level),
              'updated_at': self.updated_at,
              'created_at': self.created_at,
              'hypervisor_hostname': self.name,
@@ -82,7 +85,7 @@ class Host(dict):
              'name': self.name,
              'service': self.service,
              'instance_uuids': self.instance_uuids,
-        }
+             }
         return d
 
     def __getitem__(self, k):
@@ -143,7 +146,8 @@ class Host(dict):
         if status not in ("DOWNLOADED", "DOWNLOADING"):
             # We need to download it
             self.images[image_uuid]["status"] = "DOWNLOADING"
-            self.instance_tasks[instance_uuid] = ENV.process(self._download(image))
+            self.instance_tasks[instance_uuid] = ENV.process(
+                self._download(image))
             try:
                 yield self.instance_tasks[instance_uuid]
             except simpy.Interrupt:
@@ -151,21 +155,22 @@ class Host(dict):
                 raise
         elif status == "DOWNLOADING":
             # It is beign downloaded, wait for it
-            self.instance_tasks[instance_uuid] = self.images[image_uuid]["downloaded"]
+            self.instance_tasks[instance_uuid] = self.images[
+                image_uuid]["downloaded"]
             yield self.instance_tasks[instance_uuid]
 
         # Next, copy the image
-        self.instance_tasks[instance_uuid] = ENV.process(self._duplicate(image))
+        self.instance_tasks[instance_uuid] = ENV.process(
+            self._duplicate(image))
         yield self.instance_tasks[instance_uuid]
 
         root = instance_ref["instance_properties"]["root_gb"]
         ephemeral = instance_ref["instance_properties"]["ephemeral_gb"]
 
         # Next, resize the image
-        self.instance_tasks[instance_uuid] = ENV.process(self._resize(image, root, ephemeral))
+        self.instance_tasks[instance_uuid] = ENV.process(
+            self._resize(image, root, ephemeral))
         yield self.instance_tasks[instance_uuid]
-
-
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         """Actually create the image."""
@@ -226,4 +231,3 @@ class Host(dict):
                                               job_store))
         except simpy.Interrupt:
             pass
-

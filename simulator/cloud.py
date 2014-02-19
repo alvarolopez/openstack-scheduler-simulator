@@ -31,10 +31,10 @@ opts = [
                help=('Default image UUID to use if trace '
                      'file does not contain one.')),
     cfg.FloatOpt('default_image_size',
-               metavar='SIZE',
-               default=2.0,
-               help=('Default image size (GB) to use if trace file does '
-                     'not contain one.')),
+                 metavar='SIZE',
+                 default=2.0,
+                 help=('Default image size (GB) to use if trace file does '
+                       'not contain one.')),
     cfg.StrOpt('default_flavor',
                metavar='FLAVOR_NAME',
                default="m1.tiny",
@@ -44,7 +44,7 @@ opts = [
                metavar='DIR',
                default='outputs',
                help='Where to store simulation output files'),
-    ]
+]
 
 CONF = cfg.CONF
 CONF.register_opts(opts, group='simulator')
