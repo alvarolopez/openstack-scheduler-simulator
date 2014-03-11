@@ -7,13 +7,15 @@ from nova import service
 
 #import simulator
 import simulator.log as logging
+from simulator import cloud
 
-config.parse_args(sys.argv)
-logging.setup()
+CONF = cfg.CONF
+
 
 
 def main():
-    from simulator import cloud
+    config.parse_args(sys.argv)
+    logging.setup()
     cloud.start()
 
 

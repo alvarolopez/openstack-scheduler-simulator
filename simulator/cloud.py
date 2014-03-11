@@ -64,7 +64,7 @@ def generate(reqs):
 
     # FIME(aloga): really simplistic
     hosts = []
-    for i in xrange(50):
+    for i in xrange(1):
         hosts.append(simulator.hosts.Host("node-%02d" % i,
                                           2,
                                           32 * 1024,
@@ -72,9 +72,9 @@ def generate(reqs):
     MANAGER.add_hosts(hosts)
 
     for req in reqs:
-        if req["start"] != 0 and req["start"] < req["submit"]:
-            print "discarding req %s" % req["id"]
-            continue
+#        if req["start"] != 0 and req["start"] < req["submit"]:
+#            print "discarding req %s" % req["id"]
+#            continue
 
         # FIXME(aloga). we should make this configurable. Or even adjust the
         # request to the available flavors.
@@ -94,7 +94,6 @@ def start():
     if CONF.simulator.max_simulation_time is not None:
         max_time = CONF.simulator.max_simulation_time
     else:
-        # FIXME(aloga): this does not work when downloading images...
         max_time = max([i["end"] for i in reqs]) * 30
 
     MANAGER.setUp()

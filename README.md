@@ -65,4 +65,4 @@ option to configure various parameters for the simulation. Have a look at
 After enabling the virtualenv, run the simulator like this:
 
     source .venv/bin/activate
-    python simulate.py --config-file etc/nova.conf --config-file etc/simulation.conf
+    python -B simulate.py --config-file etc/nova.conf --config-file etc/simulation.conf

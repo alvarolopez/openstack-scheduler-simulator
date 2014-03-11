@@ -41,18 +41,18 @@ class Request(object):
         # longer present
         yield ENV.timeout(self.req["submit"] - ENV.now)
         start = ENV.now
-        self.LOG.info("start w/ %s cores", self.req["cores"])
-        yield ENV.timeout(1)
+        self.LOG.info("creating req w/ %s cores", self.req["cores"])
 
         # Prepare the jobs
-        jid = self.req["id"]
-        wall = self.req["end"] - self.req["start"]
-        expected_elapsed = self.req["end"] - self.req["submit"]
-        if wall > 0:
-            for i in xrange(self.req["cores"]):
-                job = simulator.jobs.SimpleJob("%s-%s" % (jid, i), wall)
-                self.jobs.append(job)
-                self.job_store.put(job)
+#        jid = self.req["id"]
+#
+#        wall = self.req["end"] - self.req["start"]
+#        expected_elapsed = self.req["end"] - self.req["submit"]
+#        if wall > 0:
+#            for i in xrange(self.req["cores"]):
+#                job = simulator.jobs.SimpleJob("%s-%s" % (jid, i), wall)
+#                self.jobs.append(job)
+#                self.job_store.put(job)
 
         # Request instances
         # Calculate how much instances I actually need. Maybe check the
@@ -73,11 +73,15 @@ class Request(object):
 
         instance_uuids = req_spec["instance_uuids"]
 
-        self.LOG.debug("%s got instances: %s" % (self.name, instance_uuids))
+        for i in instance_uuids:
+            status = MANAGER.get_instance_status(i)
+            self.LOG.debug("%s got instance: %s [%s]" % (self.name, i, status))
 
+        # FIXME(aloga): no cuenta desde que arranca, sino desde que pido la
+        # maquina
         if self.req["terminate"]:
             wait_until = self.req["terminate"]
-            timeout = ENV.timeout(wait_until)
+            timeout = ENV.timeout(ENV.now + wait_until)
         else:
             timeout = None
 
@@ -111,11 +115,11 @@ class Request(object):
             msg = "terminated before the jobs completed."
         elif events:
             # Jobs are terminated, wait until request is terminated
-            yield timeout
+            if timeout:
+                yield timeout
             end = ENV.now
-            msg = ("terminated and jobs completed. expected wall %s, "
-                   "expected elapsed %s, "
-                   "elapsed %s" % (wall, expected_elapsed, end - start))
+            msg = ("terminated and jobs completed. elapsed %s" %
+                   end - start)
         else:
             msg = "terminated."
 

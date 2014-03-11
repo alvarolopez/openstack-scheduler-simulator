@@ -1,6 +1,5 @@
 import random
 
-import nova.exception
 import simpy
 
 import simulator
@@ -15,7 +14,7 @@ class Instance(object):
     It can run several jobs ( #jobs <= #vcpus )
     """
 
-    def __init__(self, name, instance_type, job_store, node_resources):
+    def __init__(self, name, instance_type, job_store):
         self.name = name
 
         self.job_store = job_store
@@ -25,8 +24,6 @@ class Instance(object):
         self.ephemeral_gb = instance_type["ephemeral_gb"]
 
         self.boot_time = round(random.uniform(10, 20))
-
-        self.node_resources = node_resources
 
         self.finished = ENV.event()
 
@@ -41,25 +38,6 @@ class Instance(object):
         Before actually booting the image, we will consume resources from
         the host.
         """
-        # Consume the node_resources 1st. Do not check if they're available,
-        # since check was made upstream
-        for resource in ("vcpus", "memory_mb", "root_gb", "ephemeral_gb"):
-            amount = getattr(self, resource, 0)
-            if amount == 0:
-                continue
-            if resource in ("root_gb", "ephemeral_gb"):
-                resource = "disk"
-
-            with self.node_resources[resource].get(amount) as request:
-                result = yield request | ENV.timeout(0)
-                if request not in result:
-                    # FIXME(aloga): we need to capture this
-                    raise nova.exception.ComputeResourcesUnavailable()
-            self.LOG.debug("consumes %s (%s left) %s" %
-                           (amount,
-                            self.node_resources[resource].level,
-                            resource))
-
         # Spawn
         self.LOG.warning("starts w/ %s vcpus" % self.vcpus)
         try:
@@ -76,19 +54,6 @@ class Instance(object):
         yield ENV.timeout(after)
         self.process.interrupt()
         self.LOG.info("finishes")
-
-        # Free the node_resources
-        # FIXME(DRY)
-        for resource in ("vcpus", "memory_mb", "root_gb", "ephemeral_gb"):
-            amount = getattr(self, resource, 0)
-            if amount == 0:
-                continue
-
-            if resource in ("root_gb", "ephemeral_gb"):
-                resource = "disk"
-
-            self.node_resources[resource].put(amount)
-            self.LOG.debug("frees %s %s" % (amount, resource))
 
         self.finished.succeed()
 

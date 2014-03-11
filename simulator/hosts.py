@@ -1,7 +1,6 @@
 import datetime
 import random
 
-import nova.exception
 from oslo.config import cfg
 import simpy
 
@@ -27,15 +26,8 @@ class Host(dict):
         self.vcpus = vcpus
         self.memory_mb = memory_mb
         self.disk = disk
-        self.total_disk = disk
 
         self.instances = {}
-        self.resources = {
-            "vcpus": simpy.Container(ENV, self.vcpus, init=self.vcpus),
-            "memory_mb": simpy.Container(ENV, self.memory_mb,
-                                         init=self.memory_mb),
-            "disk": simpy.Container(ENV, self.disk, init=self.disk),
-        }
 
         self.disk_bw = 0.2
 
@@ -50,7 +42,7 @@ class Host(dict):
             'disabled': False
         }
 
-        self.instance_uuids = []
+        self.instance_refs = {}
         self.instance_tasks = {}
         self.disk_available_least = None
 
@@ -63,16 +55,35 @@ class Host(dict):
     def updated_at(self):
         return datetime.datetime.utcnow()
 
+    def _get_resource_from_refs(self, resource_name):
+        resource = 0
+        for i in self.instance_refs.values():
+            resource += i["instance_type"].get(resource_name, 0)
+        return resource
+
+    @property
+    def memory_mb_used(self):
+        return self._get_resource_from_refs("memory_mb")
+
+    @property
+    def vcpus_used(self):
+        return self._get_resource_from_refs("vcpus")
+
+    @property
+    def disk_used(self):
+        disk = 0
+        for i in ("root_gb", "ephemeral_gb"):
+            disk += self._get_resource_from_refs(i)
+        return disk
+
     def get_host_info(self):
-        d = {'free_disk_gb': self.resources["disk"].level,
-             'local_gb_used': (self.resources["disk"].capacity -
-                               self.resources["disk"].level),
-             'local_gb': self.resources["disk"].capacity,
-             'free_ram_mb': self.resources["memory_mb"].level,
-             'memory_mb': self.resources['memory_mb'].capacity,
-             'vcpus': self.resources['vcpus'].capacity,
-             'vcpus_used': (self.resources['vcpus'].capacity -
-                            self.resources['vcpus'].level),
+        d = {'free_disk_gb': self.disk - self.disk_used,
+             'local_gb_used': self.disk_used,
+             'local_gb': self.disk,
+             'free_ram_mb': self.memory_mb - self.memory_mb_used,
+             'memory_mb': self.memory_mb,
+             'vcpus': self.vcpus,
+             'vcpus_used': self.vcpus_used,
              'updated_at': self.updated_at,
              'created_at': self.created_at,
              'hypervisor_hostname': self.name,
@@ -84,7 +95,7 @@ class Host(dict):
              'supported_instances': None,
              'name': self.name,
              'service': self.service,
-             'instance_uuids': self.instance_uuids,
+             'instance_uuids': self.instance_refs.keys(),
              }
         return d
 
@@ -174,6 +185,7 @@ class Host(dict):
 
     def _create_instance(self, instance_uuid, instance_ref, job_store):
         """Actually create the image."""
+        self.instance_refs[instance_uuid] = instance_ref
         self.instance_tasks[instance_uuid] = None
         try:
             yield ENV.process(self._prepare_image(instance_ref))
@@ -183,10 +195,8 @@ class Host(dict):
         instance_type = instance_ref['instance_type']
         instance = simulator.instances.Instance(instance_uuid,
                                                 instance_type,
-                                                job_store,
-                                                self.resources)
+                                                job_store)
 
-        self.instance_uuids.append(instance_uuid)
         self.instances[instance_uuid] = instance
 
         # FIXME: this does not work. not safe
@@ -197,34 +207,19 @@ class Host(dict):
     def terminate_instance(self, instance_uuid):
         """Terminate the instance."""
         self.LOG.info("terminates %s" % instance_uuid)
-        # FIXME: This fails if we are downloading the image and the image
-        # is not running yet
         try:
             instance = self.instances.pop(instance_uuid)
         except KeyError:
             # Instance not running, cancel the task
-            if self.instance_tasks[instance_uuid]:
+            if instance_uuid in self.instance_tasks:
                 self.instance_tasks[instance_uuid].interrupt()
         else:
             ENV.process(instance.shutdown())
-            self.instance_uuids.remove(instance_uuid)
+            self.instance_refs.pop(instance_uuid)
 
     def launch_instance(self, instance_uuid,
                         instance_ref, job_store):
-        """Launch an instance if we can allocate it.
-
-        We will raise a exception.NoValidHost if we cannot
-        allocate resource for the image. FIXME(aloga): we should raise
-        nova.exception.ComputeResourcesUnavailable ?
-        """
-        for i in ('vcpus', 'memory_mb', 'disk'):
-            res = instance_ref['instance_type'][i]
-            if res > self.resources[i].level:
-                msg = ("cannot spawn instance ( %s > %s %s)" %
-                       (res, self.resources[i].level, i))
-                self.LOG.error(msg)
-                raise nova.exception.NoValidHost(reason=msg)
-
+        """Launch an instance."""
         try:
             ENV.process(self._create_instance(instance_uuid,
                                               instance_ref,

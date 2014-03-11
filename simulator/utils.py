@@ -33,17 +33,17 @@ def write_start(uuid):
 def load_requests(filename):
     """Load requests from file."""
 
+    # I could use CVS here, but I prefer this methid
     fields = {
         "id": (0, int, True),
         "ownwer": (1, str, True),
         "submit": (2, int, True),
-        "terminate": (3, int, False),
-        "start": (4, int, False),
-        "end": (5, int, False),
-        "cores": (6, int, True),
-        "image": (7, str, False),
-        "size": (8, float, False),
-        "flavor": (9, str, False),
+        "timeout": (3, int, False),
+        "terminate": (4, int, False),
+        "cores": (5, int, True),
+        "image": (6, str, False),
+        "size": (7, float, False),
+        "flavor": (8, str, False),
 
     }
 
@@ -51,14 +51,15 @@ def load_requests(filename):
     with open(filename) as f:
         for line in f.readlines():
             line = line.strip()
+
             if line.startswith("#"):
                 continue
 
             line = [i.strip() for i in line.split(",")]
 
             if len(line) != len(fields):
-                print >> sys.stderr, "discarding request %s" % ",".join(line)
-                print >> sys.stderr, "ERROR: incorrect number of fields"
+                print >> sys.stderr, ("ERROR: incorrect number of fields on "
+                                      "request: \n\t%s" % ",".join(line))
                 sys.exit(1)
 
             req = {}

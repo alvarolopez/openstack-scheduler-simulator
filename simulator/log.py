@@ -31,7 +31,13 @@ class SimulatorFormatter(logging.Formatter):
 #                     '%(message)s')
         self._fmt = ('%(created)2.1f %(name)20s [%(id)s] '
                      '%(message)s')
-        return logging.Formatter.format(self, record)
+        try:
+            fmt = logging.Formatter.format(self, record)
+        except KeyError:
+            self._fmt = ('%(created)2.1f %(name)20s [-] '
+                         '%(message)s')
+            fmt = logging.Formatter.format(self, record)
+        return fmt
 
 
 class SimulatorAdapter(logging.LoggerAdapter):
