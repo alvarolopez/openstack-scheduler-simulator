@@ -1,0 +1,6 @@
+nose
+coverage
+mock
+pep8
+testtools
+fixtures

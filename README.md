@@ -5,9 +5,9 @@
 The scheduler needs OpenStack nova to run. Install a virtualenv and install
 nova into it.
 
-    virtualenv --system-site-packages .venv
+    virtualenv .venv
     source .venv/bin/activate
-    pip install -e /path/to/nova
+    pip install -r requirements.txt
 
 
 ## Trace file

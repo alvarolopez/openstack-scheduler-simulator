@@ -1,0 +1,3 @@
+-e git+https://github.com/openstack/nova#egg=nova
+oslo.config
+simpy
